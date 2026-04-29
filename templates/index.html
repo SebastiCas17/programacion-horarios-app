@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -31,6 +32,26 @@
     </aside>
 
     <main class="content">
+
+      <section id="login" class="card">
+        <div class="card-header">
+          <h2>Inicio de Sesión</h2>
+          <span>Acceso con JWT y roles de usuario</span>
+        </div>
+
+        <div class="form-grid">
+          <input id="login-correo" placeholder="Correo" value="admin@horarios.edu">
+          <input id="login-password" type="password" placeholder="Contraseña" value="admin123">
+        </div>
+
+        <button class="btn-primary" onclick="loginUsuario()">Iniciar Sesión</button>
+        <button class="btn-secondary" onclick="logoutUsuario()">Cerrar Sesión</button>
+
+        <div id="login-estado" class="summary-box">
+          No has iniciado sesión.
+        </div>
+      </section>
+
 
       <section id="docentes" class="card">
         <div class="card-header">
@@ -318,4 +339,5 @@
 
   <script src="/static/app.js"></script>
 </body>
+
 </html>

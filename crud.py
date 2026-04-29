@@ -306,3 +306,34 @@ def get_todos_los_datos(db: Session):
         "disponibilidades": get_disponibilidades(db),
         "elegibilidades": get_elegibilidades(db),
     }
+
+
+
+
+
+
+
+from auth import generar_hash_password
+
+
+def get_usuario_por_correo(db: Session, correo: str):
+    return db.query(models.Usuario).filter(models.Usuario.correo == correo).first()
+
+
+def create_usuario(db: Session, usuario: schemas.UsuarioCreate):
+    db_usuario = models.Usuario(
+        nombre=usuario.nombre,
+        correo=usuario.correo,
+        password_hash=generar_hash_password(usuario.password),
+        rol=usuario.rol,
+        estado=usuario.estado
+    )
+
+    db.add(db_usuario)
+    db.commit()
+    db.refresh(db_usuario)
+    return db_usuario
+
+
+def get_usuarios(db: Session):
+    return db.query(models.Usuario).all()

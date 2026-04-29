@@ -199,3 +199,36 @@ class HorarioOut(BaseModel):
 # ==============================================================================
 class GenerarHorarioRequest(BaseModel):
     descripcion: Optional[str] = "Horario generado automáticamente"
+
+
+
+
+
+class UsuarioCreate(BaseModel):
+    nombre: str
+    correo: str
+    password: str
+    rol: str = "Consulta"
+    estado: bool = True
+
+
+class UsuarioOut(BaseModel):
+    id: int
+    nombre: str
+    correo: str
+    rol: str
+    estado: bool
+
+    class Config:
+        from_attributes = True
+
+
+class LoginRequest(BaseModel):
+    correo: str
+    password: str
+
+
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str
+    usuario: UsuarioOut

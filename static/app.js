@@ -1,14 +1,125 @@
+// ==========================================================
+// app.js
+// Frontend para Programación de Horarios de Clase
+// Incluye integración JWT con FastAPI
+// ==========================================================
+
+
+// ==========================================================
+// SESIÓN / JWT
+// ==========================================================
+
+function obtenerToken() {
+  return localStorage.getItem("token");
+}
+
+function obtenerUsuario() {
+  const usuario = localStorage.getItem("usuario");
+
+  if (!usuario) return null;
+
+  try {
+    return JSON.parse(usuario);
+  } catch (error) {
+    console.error("Error leyendo usuario del localStorage:", error);
+    return null;
+  }
+}
+
+function guardarSesion(data) {
+  // Guarda únicamente el token limpio, sin la palabra Bearer
+  const tokenLimpio = data.access_token.replace("Bearer ", "").trim();
+
+  localStorage.setItem("token", tokenLimpio);
+  localStorage.setItem("usuario", JSON.stringify(data.usuario));
+}
+
+function cerrarSesion() {
+  localStorage.removeItem("token");
+  localStorage.removeItem("usuario");
+}
+
+function actualizarEstadoLogin() {
+  const estado = document.getElementById("login-estado");
+  if (!estado) return;
+
+  const usuario = obtenerUsuario();
+
+  if (!usuario) {
+    estado.innerHTML = "No has iniciado sesión.";
+    return;
+  }
+
+  estado.innerHTML = `
+    <strong>Sesión activa</strong><br>
+    Usuario: ${usuario.nombre}<br>
+    Correo: ${usuario.correo}<br>
+    Rol: ${usuario.rol}
+  `;
+}
+
+async function loginUsuario() {
+  const correo = document.getElementById("login-correo").value.trim();
+  const password = document.getElementById("login-password").value.trim();
+
+  if (!correo || !password) {
+    alert("Debe ingresar correo y contraseña.");
+    return;
+  }
+
+  const data = await api("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ correo, password })
+  });
+
+  guardarSesion(data);
+  actualizarEstadoLogin();
+
+  alert("Inicio de sesión exitoso");
+}
+
+function logoutUsuario() {
+  cerrarSesion();
+  actualizarEstadoLogin();
+  alert("Sesión cerrada");
+}
+
+
+// ==========================================================
+// FUNCIÓN GENERAL PARA CONSUMIR API
+// ==========================================================
+
 async function api(url, options = {}) {
   try {
+    const token = obtenerToken();
+
+    const headers = {
+      "Content-Type": "application/json",
+      ...(options.headers || {})
+    };
+
+    // Si hay token guardado, se envía en todas las peticiones
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
     const response = await fetch(url, {
-      headers: { "Content-Type": "application/json" },
-      ...options
+      ...options,
+      headers
     });
 
     const data = await response.json().catch(() => null);
 
     if (!response.ok) {
-      throw new Error(data?.detail || "Error en la petición");
+      const detalle = data?.detail || "Error en la petición";
+
+      // Si el token ya no sirve, se borra para obligar a iniciar sesión otra vez
+      if (response.status === 401) {
+        cerrarSesion();
+        actualizarEstadoLogin();
+      }
+
+      throw new Error(detalle);
     }
 
     return data;
@@ -23,6 +134,11 @@ function option(value, text) {
   return `<option value="${value}">${text}</option>`;
 }
 
+
+// ==========================================================
+// CARGA INICIAL
+// ==========================================================
+
 async function cargarTodo() {
   await Promise.all([
     cargarDocentes(),
@@ -34,6 +150,11 @@ async function cargarTodo() {
     cargarElegibilidad()
   ]);
 }
+
+
+// ==========================================================
+// DOCENTES
+// ==========================================================
 
 async function cargarDocentes() {
   const docentes = await api("/api/docentes");
@@ -49,17 +170,23 @@ async function cargarDocentes() {
   `).join("");
 
   const opciones = docentes.map(d => option(d.id, `${d.id} - ${d.nombre}`)).join("");
+
   document.getElementById("disp-docente").innerHTML = opciones;
   document.getElementById("eleg-docente").innerHTML = opciones;
 }
 
 async function crearDocente() {
   const docente = {
-    nombre: document.getElementById("docente-nombre").value,
-    correo: document.getElementById("docente-correo").value,
+    nombre: document.getElementById("docente-nombre").value.trim(),
+    correo: document.getElementById("docente-correo").value.trim(),
     tipo_vinculacion: document.getElementById("docente-tipo").value,
     estado: true
   };
+
+  if (!docente.nombre || !docente.correo) {
+    alert("Debe ingresar nombre y correo del docente.");
+    return;
+  }
 
   await api("/api/docentes", {
     method: "POST",
@@ -76,11 +203,19 @@ async function crearDocente() {
 async function eliminarDocente(id) {
   if (!confirm("¿Eliminar este docente?")) return;
 
-  await api(`/api/docentes/${id}`, { method: "DELETE" });
+  await api(`/api/docentes/${id}`, {
+    method: "DELETE"
+  });
+
   await cargarDocentes();
   await cargarDisponibilidad();
   await cargarElegibilidad();
 }
+
+
+// ==========================================================
+// CURSOS
+// ==========================================================
 
 async function cargarCursos() {
   const cursos = await api("/api/cursos");
@@ -96,14 +231,15 @@ async function cargarCursos() {
   `).join("");
 
   const opciones = cursos.map(c => option(c.id, `${c.id} - ${c.nombre}`)).join("");
+
   document.getElementById("grupo-curso").innerHTML = opciones;
   document.getElementById("eleg-curso").innerHTML = opciones;
 }
 
 async function crearCurso() {
   const curso = {
-    nombre: document.getElementById("curso-nombre").value,
-    codigo: document.getElementById("curso-codigo").value,
+    nombre: document.getElementById("curso-nombre").value.trim(),
+    codigo: document.getElementById("curso-codigo").value.trim(),
     creditos: Number(document.getElementById("curso-creditos").value),
     sesiones_semana: Number(document.getElementById("curso-sesiones").value),
     duracion_sesion_h: 2,
@@ -111,6 +247,11 @@ async function crearCurso() {
     requiere_sillas_moviles: document.getElementById("curso-sillas").checked,
     estado: true
   };
+
+  if (!curso.nombre || !curso.codigo) {
+    alert("Debe ingresar nombre y código del curso.");
+    return;
+  }
 
   await api("/api/cursos", {
     method: "POST",
@@ -130,11 +271,19 @@ async function crearCurso() {
 async function eliminarCurso(id) {
   if (!confirm("¿Eliminar este curso?")) return;
 
-  await api(`/api/cursos/${id}`, { method: "DELETE" });
+  await api(`/api/cursos/${id}`, {
+    method: "DELETE"
+  });
+
   await cargarCursos();
   await cargarGrupos();
   await cargarElegibilidad();
 }
+
+
+// ==========================================================
+// GRUPOS
+// ==========================================================
 
 async function cargarGrupos() {
   const grupos = await api("/api/grupos");
@@ -154,11 +303,16 @@ async function cargarGrupos() {
 async function crearGrupo() {
   const grupo = {
     id_curso: Number(document.getElementById("grupo-curso").value),
-    nombre_grupo: document.getElementById("grupo-nombre").value,
+    nombre_grupo: document.getElementById("grupo-nombre").value.trim(),
     cupo_objetivo: Number(document.getElementById("grupo-cupo").value),
     inscritos: Number(document.getElementById("grupo-inscritos").value),
     estado: "Activo"
   };
+
+  if (!grupo.id_curso || !grupo.nombre_grupo) {
+    alert("Debe seleccionar un curso e ingresar nombre del grupo.");
+    return;
+  }
 
   await api("/api/grupos", {
     method: "POST",
@@ -175,9 +329,17 @@ async function crearGrupo() {
 async function eliminarGrupo(id) {
   if (!confirm("¿Eliminar este grupo?")) return;
 
-  await api(`/api/grupos/${id}`, { method: "DELETE" });
+  await api(`/api/grupos/${id}`, {
+    method: "DELETE"
+  });
+
   await cargarGrupos();
 }
+
+
+// ==========================================================
+// AULAS
+// ==========================================================
 
 async function cargarAulas() {
   const aulas = await api("/api/aulas");
@@ -196,13 +358,18 @@ async function cargarAulas() {
 
 async function crearAula() {
   const aula = {
-    codigo: document.getElementById("aula-codigo").value,
+    codigo: document.getElementById("aula-codigo").value.trim(),
     capacidad: Number(document.getElementById("aula-capacidad").value),
     tiene_computadores: document.getElementById("aula-computadores").checked,
     tiene_sillas_moviles: document.getElementById("aula-sillas").checked,
-    edificio: document.getElementById("aula-edificio").value,
+    edificio: document.getElementById("aula-edificio").value.trim(),
     estado: true
   };
+
+  if (!aula.codigo || !aula.capacidad) {
+    alert("Debe ingresar código y capacidad del aula.");
+    return;
+  }
 
   await api("/api/aulas", {
     method: "POST",
@@ -221,9 +388,17 @@ async function crearAula() {
 async function eliminarAula(id) {
   if (!confirm("¿Eliminar esta aula?")) return;
 
-  await api(`/api/aulas/${id}`, { method: "DELETE" });
+  await api(`/api/aulas/${id}`, {
+    method: "DELETE"
+  });
+
   await cargarAulas();
 }
+
+
+// ==========================================================
+// FRANJAS HORARIAS
+// ==========================================================
 
 async function cargarFranjas() {
   const franjas = await api("/api/franjas");
@@ -247,10 +422,15 @@ async function cargarFranjas() {
 async function crearFranja() {
   const franja = {
     dia_semana: document.getElementById("franja-dia").value,
-    hora_inicio: document.getElementById("franja-inicio").value,
-    hora_fin: document.getElementById("franja-fin").value,
+    hora_inicio: document.getElementById("franja-inicio").value.trim(),
+    hora_fin: document.getElementById("franja-fin").value.trim(),
     bloqueada: document.getElementById("franja-bloqueada").checked
   };
+
+  if (!franja.hora_inicio || !franja.hora_fin) {
+    alert("Debe ingresar hora de inicio y hora de fin.");
+    return;
+  }
 
   await api("/api/franjas", {
     method: "POST",
@@ -267,10 +447,18 @@ async function crearFranja() {
 async function eliminarFranja(id) {
   if (!confirm("¿Eliminar esta franja?")) return;
 
-  await api(`/api/franjas/${id}`, { method: "DELETE" });
+  await api(`/api/franjas/${id}`, {
+    method: "DELETE"
+  });
+
   await cargarFranjas();
   await cargarDisponibilidad();
 }
+
+
+// ==========================================================
+// DISPONIBILIDAD DOCENTE
+// ==========================================================
 
 async function cargarDisponibilidad() {
   const disponibilidad = await api("/api/disponibilidad");
@@ -291,6 +479,11 @@ async function crearDisponibilidad() {
     id_franja: Number(document.getElementById("disp-franja").value)
   };
 
+  if (!disponibilidad.id_docente || !disponibilidad.id_franja) {
+    alert("Debe seleccionar docente y franja.");
+    return;
+  }
+
   await api("/api/disponibilidad", {
     method: "POST",
     body: JSON.stringify(disponibilidad)
@@ -302,9 +495,17 @@ async function crearDisponibilidad() {
 async function eliminarDisponibilidad(id) {
   if (!confirm("¿Eliminar esta disponibilidad?")) return;
 
-  await api(`/api/disponibilidad/${id}`, { method: "DELETE" });
+  await api(`/api/disponibilidad/${id}`, {
+    method: "DELETE"
+  });
+
   await cargarDisponibilidad();
 }
+
+
+// ==========================================================
+// ELEGIBILIDAD DOCENTE-CURSO
+// ==========================================================
 
 async function cargarElegibilidad() {
   const elegibilidad = await api("/api/elegibilidad");
@@ -326,6 +527,11 @@ async function crearElegibilidad() {
     activo: true
   };
 
+  if (!elegibilidad.id_docente || !elegibilidad.id_curso) {
+    alert("Debe seleccionar docente y curso.");
+    return;
+  }
+
   await api("/api/elegibilidad", {
     method: "POST",
     body: JSON.stringify(elegibilidad)
@@ -337,9 +543,17 @@ async function crearElegibilidad() {
 async function eliminarElegibilidad(id) {
   if (!confirm("¿Eliminar esta elegibilidad?")) return;
 
-  await api(`/api/elegibilidad/${id}`, { method: "DELETE" });
+  await api(`/api/elegibilidad/${id}`, {
+    method: "DELETE"
+  });
+
   await cargarElegibilidad();
 }
+
+
+// ==========================================================
+// MOTOR DE HORARIOS
+// ==========================================================
 
 async function generarHorario() {
   const resultado = await api("/api/generar-horario", {
@@ -375,4 +589,12 @@ async function generarHorario() {
     `).join("");
 }
 
-document.addEventListener("DOMContentLoaded", cargarTodo);
+
+// ==========================================================
+// INICIO DE LA PÁGINA
+// ==========================================================
+
+document.addEventListener("DOMContentLoaded", () => {
+  actualizarEstadoLogin();
+  cargarTodo();
+});

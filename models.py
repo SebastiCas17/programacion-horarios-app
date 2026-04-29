@@ -15,6 +15,16 @@ from sqlalchemy.sql import func
 from database import Base
 
 
+class Usuario(Base):
+    __tablename__ = "usuarios"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String(120), nullable=False)
+    correo = Column(String(150), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    rol = Column(String(30), nullable=False, default="Consulta")
+    estado = Column(Boolean, default=True)
+
 # ==============================================================================
 # ENTIDAD: Docente
 # Representa a un profesor que puede dictar clases en el semestre
