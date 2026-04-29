@@ -6,6 +6,9 @@ Define todos los endpoints REST, sirve la interfaz web y protege rutas críticas
 """
 
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.responses import StreamingResponse
+import io
+import csv
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
@@ -358,110 +361,95 @@ def _construir_asignaciones_out(asignaciones: list, horario_id: int) -> list:
 # ==============================================================================
 # HORARIOS GENERADOS
 # ==============================================================================
-@app.post("/api/generar-horario", tags=["Motor"])
-def generar_horario(
-    db: Session = Depends(get_db),
-    usuario=Depends(exigir_roles("Administrador", "Coordinador"))
+# ==============================================================================
+# HORARIOS GENERADOS, PUBLICACIÓN OFICIAL Y EXPORTACIÓN
+# ==============================================================================
+@app.get("/api/horarios", tags=["Horarios"])
+def listar_horarios(db: Session = Depends(get_db)):
+    """
+    Lista todos los horarios generados.
+    Permite al frontend mostrar historial, estado y opción de publicar/exportar.
+    """
+    horarios = crud.get_horarios(db)
+
+    return [
+        {
+            "id": h.id,
+            "fecha_generacion": h.fecha_generacion,
+            "estado": h.estado,
+            "puntaje_total": h.puntaje_total,
+            "es_oficial": h.es_oficial,
+            "num_asignaciones": len(h.asignaciones),
+            "num_conflictos": len(h.conflictos)
+        }
+        for h in horarios
+    ]
+
+
+@app.get("/api/horarios/{horario_id}", tags=["Horarios"])
+def obtener_horario(
+    horario_id: int,
+    db: Session = Depends(get_db)
 ):
     """
-    Ejecuta el motor de backtracking con sesiones reales.
+    Obtiene el detalle completo de un horario generado.
     """
-    # 1. Preparar sesiones reales en BD
-    crud.preparar_sesiones_para_motor(db)
+    horario = crud.get_horario(db, horario_id)
 
-    # 2. Cargar datos en memoria
-    datos = crud.get_todos_los_datos(db)
+    if not horario:
+        raise HTTPException(status_code=404, detail="Horario no encontrado")
 
-    if not datos["grupos"]:
-        raise HTTPException(
-            status_code=400,
-            detail="No hay grupos registrados. Registra cursos y grupos antes de generar el horario."
-        )
+    asignaciones_out = []
 
-    if not datos["aulas"]:
-        raise HTTPException(status_code=400, detail="No hay aulas registradas.")
+    for asig in horario.asignaciones:
+        curso_nombre = "N/A"
+        grupo_nombre = "N/A"
+        numero_sesion = None
 
-    if not datos["franjas"]:
-        raise HTTPException(status_code=400, detail="No hay franjas horarias registradas.")
+        if asig.sesion:
+            numero_sesion = asig.sesion.numero_sesion
 
-    if not datos.get("sesiones"):
-        raise HTTPException(
-            status_code=400,
-            detail="No hay sesiones reales generadas para programar."
-        )
+            if asig.sesion.grupo:
+                grupo_nombre = asig.sesion.grupo.nombre_grupo
 
-    # 3. Crear horario
-    horario_db = crud.create_horario(db)
+                if asig.sesion.grupo.curso:
+                    curso_nombre = asig.sesion.grupo.curso.nombre
 
-    # 4. Ejecutar motor
-    motor = GeneradorHorarios(datos)
-    resultado = motor.generar()
+        asignaciones_out.append({
+            "id": asig.id,
+            "sesion_id": asig.id_sesion,
+            "numero_sesion": numero_sesion,
+            "curso_nombre": curso_nombre,
+            "grupo_nombre": grupo_nombre,
+            "docente_nombre": asig.docente.nombre if asig.docente else "N/A",
+            "aula_codigo": asig.aula.codigo if asig.aula else "N/A",
+            "franja_dia": asig.franja.dia_semana if asig.franja else "N/A",
+            "franja_inicio": asig.franja.hora_inicio if asig.franja else "",
+            "franja_fin": asig.franja.hora_fin if asig.franja else "",
+            "estado": asig.estado,
+            "penalizacion": asig.puntaje_penalizacion
+        })
 
-    puntaje_total = resultado.get("puntaje_total", 0.0)
+    conflictos_out = []
 
-    # 5. Persistir asignaciones reales
-    for asig in resultado.get("asignaciones", []):
-        sesion = asig["sesion"]
-
-        asignacion_db = models.Asignacion(
-            id_sesion=sesion.id,
-            id_docente=asig["docente"].id,
-            id_aula=asig["aula"].id,
-            id_franja=asig["franja"].id,
-            id_horario=horario_db.id,
-            estado="Valida",
-            puntaje_penalizacion=asig.get("penalizacion", 0.0)
-        )
-
-        db.add(asignacion_db)
-
-        sesion.estado = "Asignada"
-
-    # 6. Persistir conflictos trazables
-    for conf in resultado.get("conflictos", []):
-        id_sesion = conf.get("id_sesion")
-
-        conflicto_db = models.Conflicto(
-            id_horario=horario_db.id,
-            id_sesion=id_sesion,
-            id_restriccion=conf.get("id_restriccion", "???"),
-            descripcion=conf.get("descripcion", ""),
-            entidad_tipo=conf.get("entidad_tipo", "Sistema"),
-            entidad_id=conf.get("entidad_id", 0)
-        )
-
-        db.add(conflicto_db)
-
-        if id_sesion:
-            sesion_conflicto = db.query(models.SesionClase).filter(
-                models.SesionClase.id == id_sesion
-            ).first()
-
-            if sesion_conflicto:
-                sesion_conflicto.estado = "Conflicto"
-
-    # 7. Actualizar estado del horario
-    estado_final = "Valido" if resultado["exito"] else "No_Factible"
-    horario_db.estado = estado_final
-    horario_db.puntaje_total = puntaje_total
-
-    db.commit()
-    db.refresh(horario_db)
-
-    asignaciones_out = _construir_asignaciones_out(
-        resultado.get("asignaciones", []),
-        horario_db.id
-    )
+    for conf in horario.conflictos:
+        conflictos_out.append({
+            "id": conf.id,
+            "id_sesion": conf.id_sesion,
+            "id_restriccion": conf.id_restriccion,
+            "descripcion": conf.descripcion,
+            "entidad_tipo": conf.entidad_tipo,
+            "entidad_id": conf.entidad_id
+        })
 
     return {
-        "horario_id": horario_db.id,
-        "estado": estado_final,
-        "puntaje_total": puntaje_total,
-        "total_asignadas": len(resultado.get("asignaciones", [])),
-        "total_conflictos": len(resultado.get("conflictos", [])),
+        "id": horario.id,
+        "fecha_generacion": horario.fecha_generacion,
+        "estado": horario.estado,
+        "puntaje_total": horario.puntaje_total,
+        "es_oficial": horario.es_oficial,
         "asignaciones": asignaciones_out,
-        "conflictos": resultado.get("conflictos", []),
-        "reporte_blandas": resultado.get("reporte_blandas", {})
+        "conflictos": conflictos_out
     }
 
 
@@ -471,6 +459,10 @@ def publicar_horario(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
+    """
+    Marca un horario válido como oficial e inmutable.
+    Cumple RH-14: versión oficial publicada.
+    """
     horario = crud.publicar_horario(db, horario_id)
 
     if not horario:
@@ -479,7 +471,12 @@ def publicar_horario(
             detail="Solo se pueden publicar horarios con estado Valido"
         )
 
-    return {"mensaje": "Horario publicado como oficial", "horario_id": horario_id}
+    return {
+        "mensaje": "Horario publicado como oficial",
+        "horario_id": horario_id,
+        "estado": horario.estado,
+        "es_oficial": horario.es_oficial
+    }
 
 
 @app.delete("/api/horarios/{horario_id}", tags=["Horarios"])
@@ -488,6 +485,9 @@ def eliminar_horario(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador"))
 ):
+    """
+    Elimina un horario solo si no es oficial.
+    """
     resultado = crud.delete_horario(db, horario_id)
 
     if not resultado:
@@ -498,6 +498,87 @@ def eliminar_horario(
 
     return {"mensaje": "Horario eliminado correctamente"}
 
+
+@app.get("/api/horarios/{horario_id}/exportar-csv", tags=["Horarios"])
+def exportar_horario_csv(
+    horario_id: int,
+    db: Session = Depends(get_db),
+    usuario=Depends(exigir_roles("Administrador", "Coordinador", "Consulta"))
+):
+    """
+    Exporta el horario generado en formato CSV.
+    Puede abrirse en Excel como insumo del proceso académico.
+    """
+    horario = crud.get_horario(db, horario_id)
+
+    if not horario:
+        raise HTTPException(status_code=404, detail="Horario no encontrado")
+
+    output = io.StringIO()
+
+    # BOM para que Excel reconozca tildes y caracteres especiales
+    output.write("\ufeff")
+
+    writer = csv.writer(output, delimiter=";")
+
+    writer.writerow([
+        "Horario ID",
+        "Estado",
+        "Oficial",
+        "Fecha generación",
+        "Curso",
+        "Grupo",
+        "Sesión",
+        "Docente",
+        "Aula",
+        "Día",
+        "Hora inicio",
+        "Hora fin",
+        "Penalización"
+    ])
+
+    for asig in horario.asignaciones:
+        curso_nombre = "N/A"
+        grupo_nombre = "N/A"
+        numero_sesion = ""
+
+        if asig.sesion:
+            numero_sesion = asig.sesion.numero_sesion
+
+            if asig.sesion.grupo:
+                grupo_nombre = asig.sesion.grupo.nombre_grupo
+
+                if asig.sesion.grupo.curso:
+                    curso_nombre = asig.sesion.grupo.curso.nombre
+
+        writer.writerow([
+            horario.id,
+            horario.estado,
+            "Sí" if horario.es_oficial else "No",
+            horario.fecha_generacion,
+            curso_nombre,
+            grupo_nombre,
+            numero_sesion,
+            asig.docente.nombre if asig.docente else "N/A",
+            asig.aula.codigo if asig.aula else "N/A",
+            asig.franja.dia_semana if asig.franja else "N/A",
+            asig.franja.hora_inicio if asig.franja else "",
+            asig.franja.hora_fin if asig.franja else "",
+            asig.puntaje_penalizacion
+        ])
+
+    output.seek(0)
+
+    filename = f"horario_{horario.id}.csv"
+
+    response = StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv"
+    )
+
+    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+
+    return response
 
 # ==============================================================================
 # DATOS DE EJEMPLO

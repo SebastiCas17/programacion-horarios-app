@@ -30,6 +30,7 @@
       <a href="#elegibilidad">Elegibilidad</a>
       <a href="#motor">Motor</a>
       <a href="#resultados">Resultados</a>
+      <a href="#historial-horarios">Historial</a>
     </aside>
 
     <main class="content">
@@ -54,6 +55,34 @@
       </section>
 
 
+      <section id="parametros" class="card">
+        <div class="card-header">
+          <h2>Parámetros del Semestre</h2>
+          <span>Configuración institucional para validar restricciones RH-03, RH-04, RH-05, RH-11, RH-15 y RH-16</span>
+        </div>
+
+        <div class="form-grid">
+          <input id="param-nombre" placeholder="Nombre semestre" value="2026-1">
+          <input id="param-hora-inicio-lv" placeholder="Inicio Lun-Vie" value="07:00">
+          <input id="param-hora-fin-lv" placeholder="Fin Lun-Vie" value="22:00">
+          <input id="param-hora-inicio-sab" placeholder="Inicio sábado" value="07:00">
+          <input id="param-hora-fin-sab" placeholder="Fin sábado" value="13:00">
+          <input id="param-inicio-almuerzo" placeholder="Inicio almuerzo" value="12:00">
+          <input id="param-fin-almuerzo" placeholder="Fin almuerzo" value="13:00">
+          <input id="param-max-sesiones" type="number" value="4">
+          <input id="param-min-cierre" type="number" value="10">
+        </div>
+
+        <div class="checkbox-row">
+          <label><input id="param-activo" type="checkbox" checked> Semestre activo</label>
+        </div>
+
+        <button class="btn-primary" onclick="guardarParametroSemestre()">Guardar Parámetros</button>
+
+        <div id="parametro-estado" class="summary-box">
+          Parámetros no cargados.
+        </div>
+      </section>
       <section id="docentes" class="card">
         <div class="card-header">
           <h2>Docentes</h2>
@@ -190,35 +219,6 @@
             </thead>
             <tbody id="tabla-aulas"></tbody>
           </table>
-        </div>
-      </section>
-
-      <section id="parametros" class="card">
-        <div class="card-header">
-          <h2>Parámetros del Semestre</h2>
-          <span>Configuración institucional para validar restricciones RH-03, RH-04, RH-05, RH-11, RH-15 y RH-16</span>
-        </div>
-
-        <div class="form-grid">
-          <input id="param-nombre" placeholder="Nombre semestre" value="2026-1">
-          <input id="param-hora-inicio-lv" placeholder="Inicio Lun-Vie" value="07:00">
-          <input id="param-hora-fin-lv" placeholder="Fin Lun-Vie" value="22:00">
-          <input id="param-hora-inicio-sab" placeholder="Inicio sábado" value="07:00">
-          <input id="param-hora-fin-sab" placeholder="Fin sábado" value="13:00">
-          <input id="param-inicio-almuerzo" placeholder="Inicio almuerzo" value="12:00">
-          <input id="param-fin-almuerzo" placeholder="Fin almuerzo" value="13:00">
-          <input id="param-max-sesiones" type="number" value="4">
-          <input id="param-min-cierre" type="number" value="10">
-        </div>
-
-        <div class="checkbox-row">
-          <label><input id="param-activo" type="checkbox" checked> Semestre activo</label>
-        </div>
-
-        <button class="btn-primary" onclick="guardarParametroSemestre()">Guardar Parámetros</button>
-
-        <div id="parametro-estado" class="summary-box">
-          Parámetros no cargados.
         </div>
       </section>
 
@@ -362,6 +362,33 @@
 
         <h3>Conflictos</h3>
         <ul id="lista-conflictos" class="conflict-list"></ul>
+      </section>
+
+      <section id="historial-horarios" class="card">
+        <div class="card-header">
+          <h2>Historial de Horarios</h2>
+          <span>Consulta, publicación oficial y exportación del horario generado</span>
+        </div>
+
+        <button class="btn-primary" onclick="cargarHorarios()">Actualizar Historial</button>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Fecha</th>
+                <th>Estado</th>
+                <th>Oficial</th>
+                <th>Asignaciones</th>
+                <th>Conflictos</th>
+                <th>Puntaje</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-horarios"></tbody>
+          </table>
+        </div>
       </section>
 
     </main>

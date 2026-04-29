@@ -27,7 +27,6 @@ function obtenerUsuario() {
 }
 
 function guardarSesion(data) {
-  // Guarda únicamente el token limpio, sin la palabra Bearer
   const tokenLimpio = data.access_token.replace("Bearer ", "").trim();
 
   localStorage.setItem("token", tokenLimpio);
@@ -98,7 +97,6 @@ async function api(url, options = {}) {
       ...(options.headers || {})
     };
 
-    // Si hay token guardado, se envía en todas las peticiones
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
     }
@@ -113,7 +111,6 @@ async function api(url, options = {}) {
     if (!response.ok) {
       const detalle = data?.detail || "Error en la petición";
 
-      // Si el token ya no sirve, se borra para obligar a iniciar sesión otra vez
       if (response.status === 401) {
         cerrarSesion();
         actualizarEstadoLogin();
@@ -148,7 +145,8 @@ async function cargarTodo() {
     cargarAulas(),
     cargarFranjas(),
     cargarDisponibilidad(),
-    cargarElegibilidad()
+    cargarElegibilidad(),
+    cargarHorarios()
   ]);
 }
 
@@ -396,12 +394,15 @@ async function eliminarAula(id) {
   await cargarAulas();
 }
 
+
 // ==========================================================
 // PARAMETROS DE SEMESTRE
 // ==========================================================
 
 async function cargarParametroSemestre() {
   const parametro = await api("/api/parametros-semestre/activo");
+
+  const estado = document.getElementById("parametro-estado");
 
   document.getElementById("param-nombre").value = parametro.nombre;
   document.getElementById("param-hora-inicio-lv").value = parametro.hora_inicio_lv;
@@ -414,14 +415,16 @@ async function cargarParametroSemestre() {
   document.getElementById("param-min-cierre").value = parametro.min_inscritos_cierre;
   document.getElementById("param-activo").checked = parametro.activo;
 
-  document.getElementById("parametro-estado").innerHTML = `
-    <strong>Semestre activo:</strong> ${parametro.nombre}<br>
-    <strong>Lun-Vie:</strong> ${parametro.hora_inicio_lv} - ${parametro.hora_fin_lv}<br>
-    <strong>Sábado:</strong> ${parametro.hora_inicio_sab} - ${parametro.hora_fin_sab}<br>
-    <strong>Almuerzo:</strong> ${parametro.inicio_almuerzo} - ${parametro.fin_almuerzo}<br>
-    <strong>Máx. sesiones:</strong> ${parametro.max_sesiones_semana}<br>
-    <strong>Mín. cierre grupo:</strong> ${parametro.min_inscritos_cierre}
-  `;
+  if (estado) {
+    estado.innerHTML = `
+      <strong>Semestre activo:</strong> ${parametro.nombre}<br>
+      <strong>Lun-Vie:</strong> ${parametro.hora_inicio_lv} - ${parametro.hora_fin_lv}<br>
+      <strong>Sábado:</strong> ${parametro.hora_inicio_sab} - ${parametro.hora_fin_sab}<br>
+      <strong>Almuerzo:</strong> ${parametro.inicio_almuerzo} - ${parametro.fin_almuerzo}<br>
+      <strong>Máx. sesiones:</strong> ${parametro.max_sesiones_semana}<br>
+      <strong>Mín. cierre grupo:</strong> ${parametro.min_inscritos_cierre}
+    `;
+  }
 }
 
 async function guardarParametroSemestre() {
@@ -639,6 +642,110 @@ async function generarHorario() {
         <strong>${c.id_restriccion}</strong>: ${c.descripcion}
       </li>
     `).join("");
+
+  await cargarHorarios();
+}
+
+
+// ==========================================================
+// HISTORIAL, PUBLICACIÓN Y EXPORTACIÓN DE HORARIOS
+// ==========================================================
+
+async function cargarHorarios() {
+  const horarios = await api("/api/horarios");
+
+  const tabla = document.getElementById("tabla-horarios");
+
+  if (!tabla) return;
+
+  tabla.innerHTML = horarios.map(h => {
+    const fecha = h.fecha_generacion
+      ? new Date(h.fecha_generacion).toLocaleString()
+      : "";
+
+    const puedePublicar = h.estado === "Valido" && !h.es_oficial;
+
+    return `
+      <tr>
+        <td>${h.id}</td>
+        <td>${fecha}</td>
+        <td>${h.estado}</td>
+        <td>${h.es_oficial ? "Sí" : "No"}</td>
+        <td>${h.num_asignaciones}</td>
+        <td>${h.num_conflictos}</td>
+        <td>${h.puntaje_total ?? 0}</td>
+        <td>
+          ${puedePublicar ? `<button onclick="publicarHorario(${h.id})">Publicar</button>` : ""}
+          <button onclick="exportarHorarioCSV(${h.id})">Exportar CSV</button>
+          ${!h.es_oficial ? `<button onclick="eliminarHorario(${h.id})">Eliminar</button>` : ""}
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+async function publicarHorario(id) {
+  if (!confirm("¿Deseas marcar este horario como oficial? Esta acción lo dejará como versión oficial.")) {
+    return;
+  }
+
+  await api(`/api/horarios/${id}/publicar`, {
+    method: "POST"
+  });
+
+  alert("Horario publicado como oficial");
+  await cargarHorarios();
+}
+
+async function eliminarHorario(id) {
+  if (!confirm("¿Eliminar este horario? Solo se permite si no es oficial.")) {
+    return;
+  }
+
+  await api(`/api/horarios/${id}`, {
+    method: "DELETE"
+  });
+
+  alert("Horario eliminado correctamente");
+  await cargarHorarios();
+}
+
+async function exportarHorarioCSV(id) {
+  try {
+    const token = obtenerToken();
+
+    const headers = {};
+
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`/api/horarios/${id}/exportar-csv`, {
+      method: "GET",
+      headers
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => null);
+      throw new Error(data?.detail || "No se pudo exportar el horario");
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `horario_${id}.csv`;
+    document.body.appendChild(a);
+    a.click();
+
+    a.remove();
+    window.URL.revokeObjectURL(url);
+
+  } catch (error) {
+    console.error(error);
+    alert(error.message);
+  }
 }
 
 
