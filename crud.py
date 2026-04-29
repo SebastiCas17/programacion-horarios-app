@@ -235,6 +235,87 @@ def create_sesiones_para_grupo(db: Session, grupo_id: int, num_sesiones: int):
         db.refresh(s)
     return sesiones
 
+def preparar_sesiones_para_motor(db: Session):
+    """
+    Crea o actualiza las sesiones reales que el motor debe programar.
+    Cada grupo activo genera tantas sesiones como indique el curso.
+    No borra sesiones históricas para evitar romper asignaciones ya guardadas.
+    """
+    grupos = db.query(models.Grupo).all()
+    cursos_por_id = {c.id: c for c in db.query(models.Curso).all()}
+
+    sesiones_motor = []
+
+    for grupo in grupos:
+        if grupo.estado == "Cerrado":
+            continue
+
+        curso = cursos_por_id.get(grupo.id_curso)
+
+        if not curso or not curso.estado:
+            continue
+
+        sesiones_existentes = db.query(models.SesionClase).filter(
+            models.SesionClase.id_grupo == grupo.id
+        ).all()
+
+        sesiones_por_numero = {
+            s.numero_sesion: s for s in sesiones_existentes
+        }
+
+        for numero in range(1, curso.sesiones_semana + 1):
+            if numero in sesiones_por_numero:
+                sesion = sesiones_por_numero[numero]
+                sesion.estado = "Pendiente"
+            else:
+                sesion = models.SesionClase(
+                    id_grupo=grupo.id,
+                    numero_sesion=numero,
+                    estado="Pendiente"
+                )
+                db.add(sesion)
+
+            sesiones_motor.append(sesion)
+
+    db.commit()
+
+    for sesion in sesiones_motor:
+        db.refresh(sesion)
+
+    return sesiones_motor
+
+
+def get_sesiones_motor(db: Session):
+    """
+    Retorna las sesiones reales que pueden ser usadas por el motor.
+    """
+    return db.query(models.SesionClase).join(
+        models.Grupo,
+        models.SesionClase.id_grupo == models.Grupo.id
+    ).join(
+        models.Curso,
+        models.Grupo.id_curso == models.Curso.id
+    ).filter(
+        models.Grupo.estado != "Cerrado",
+        models.Curso.estado == True
+    ).all()
+
+
+def actualizar_estado_sesion(db: Session, sesion_id: int, estado: str):
+    """
+    Cambia el estado de una sesión: Pendiente / Asignada / Conflicto.
+    """
+    sesion = db.query(models.SesionClase).filter(
+        models.SesionClase.id == sesion_id
+    ).first()
+
+    if sesion:
+        sesion.estado = estado
+        db.commit()
+        db.refresh(sesion)
+
+    return sesion
+
 
 # ==============================================================================
 # CRUD: Horario
@@ -293,18 +374,17 @@ def delete_horario(db: Session, horario_id: int):
 def get_todos_los_datos(db: Session):
     """
     Carga todos los datos necesarios para el motor de horarios en memoria.
-    Patrón Singleton aplicado: se carga una vez y se pasa a todos los módulos del motor.
+    Incluye sesiones reales persistidas en la base de datos.
     """
     return {
         "docentes": get_docentes(db),
         "cursos": get_cursos(db),
         "grupos": get_grupos(db),
         "aulas": get_aulas(db),
-        "franjas": db.query(models.FranjaHoraria).filter(
-            models.FranjaHoraria.bloqueada == False
-        ).all(),
+        "franjas": get_franjas(db),
         "disponibilidades": get_disponibilidades(db),
         "elegibilidades": get_elegibilidades(db),
+        "sesiones": get_sesiones_motor(db),
         "parametro_semestre": obtener_o_crear_parametro_activo(db)
     }
 
@@ -379,7 +459,44 @@ def obtener_o_crear_parametro_activo(db: Session):
 
 
 def create_parametro_semestre(db: Session, parametro: schemas.ParametroSemestreCreate):
-    # Solo puede haber un semestre activo
+    """
+    Crea o actualiza los parámetros del semestre.
+    Si ya existe un semestre activo o uno con el mismo nombre, lo actualiza.
+    Esto evita errores por nombre duplicado.
+    """
+
+    # Buscar si ya existe un parámetro con el mismo nombre
+    existente = db.query(models.ParametroSemestre).filter(
+        models.ParametroSemestre.nombre == parametro.nombre
+    ).first()
+
+    # Si no existe por nombre, buscar el activo
+    if not existente:
+        existente = get_parametro_activo(db)
+
+    # Si existe, actualizarlo
+    if existente:
+        existente.nombre = parametro.nombre
+        existente.hora_inicio_lv = parametro.hora_inicio_lv
+        existente.hora_fin_lv = parametro.hora_fin_lv
+        existente.hora_inicio_sab = parametro.hora_inicio_sab
+        existente.hora_fin_sab = parametro.hora_fin_sab
+        existente.inicio_almuerzo = parametro.inicio_almuerzo
+        existente.fin_almuerzo = parametro.fin_almuerzo
+        existente.max_sesiones_semana = parametro.max_sesiones_semana
+        existente.min_inscritos_cierre = parametro.min_inscritos_cierre
+        existente.activo = parametro.activo
+
+        if parametro.activo:
+            db.query(models.ParametroSemestre).filter(
+                models.ParametroSemestre.id != existente.id
+            ).update({"activo": False})
+
+        db.commit()
+        db.refresh(existente)
+        return existente
+
+    # Si no existe ninguno, crear uno nuevo
     if parametro.activo:
         db.query(models.ParametroSemestre).update({"activo": False})
         db.commit()

@@ -329,12 +329,47 @@ def eliminar_elegibilidad(
 
 # ==============================================================================
 # MOTOR DE HORARIOS
+# =============================================================================
+
+def _construir_asignaciones_out(asignaciones: list, horario_id: int) -> list:
+    """
+    Construye la lista de asignaciones para el frontend con datos expandidos.
+    """
+    resultado = []
+
+    for asig in asignaciones:
+        resultado.append({
+            "horario_id": horario_id,
+            "sesion_id": asig["sesion"].id,
+            "numero_sesion": asig["sesion"].numero_sesion,
+            "docente_nombre": asig["docente"].nombre,
+            "aula_codigo": asig["aula"].codigo,
+            "franja_dia": asig["franja"].dia_semana,
+            "franja_inicio": asig["franja"].hora_inicio,
+            "franja_fin": asig["franja"].hora_fin,
+            "curso_nombre": asig["curso"].nombre,
+            "grupo_nombre": asig["grupo"].nombre_grupo,
+            "penalizacion": asig.get("penalizacion", 0.0)
+        })
+
+    return resultado
+
+
+# ==============================================================================
+# HORARIOS GENERADOS
 # ==============================================================================
 @app.post("/api/generar-horario", tags=["Motor"])
 def generar_horario(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
+    """
+    Ejecuta el motor de backtracking con sesiones reales.
+    """
+    # 1. Preparar sesiones reales en BD
+    crud.preparar_sesiones_para_motor(db)
+
+    # 2. Cargar datos en memoria
     datos = crud.get_todos_los_datos(db)
 
     if not datos["grupos"]:
@@ -342,21 +377,34 @@ def generar_horario(
             status_code=400,
             detail="No hay grupos registrados. Registra cursos y grupos antes de generar el horario."
         )
+
     if not datos["aulas"]:
         raise HTTPException(status_code=400, detail="No hay aulas registradas.")
+
     if not datos["franjas"]:
         raise HTTPException(status_code=400, detail="No hay franjas horarias registradas.")
 
+    if not datos.get("sesiones"):
+        raise HTTPException(
+            status_code=400,
+            detail="No hay sesiones reales generadas para programar."
+        )
+
+    # 3. Crear horario
     horario_db = crud.create_horario(db)
 
+    # 4. Ejecutar motor
     motor = GeneradorHorarios(datos)
     resultado = motor.generar()
 
     puntaje_total = resultado.get("puntaje_total", 0.0)
 
+    # 5. Persistir asignaciones reales
     for asig in resultado.get("asignaciones", []):
+        sesion = asig["sesion"]
+
         asignacion_db = models.Asignacion(
-            id_sesion=0,
+            id_sesion=sesion.id,
             id_docente=asig["docente"].id,
             id_aula=asig["aula"].id,
             id_franja=asig["franja"].id,
@@ -364,19 +412,35 @@ def generar_horario(
             estado="Valida",
             puntaje_penalizacion=asig.get("penalizacion", 0.0)
         )
+
         db.add(asignacion_db)
 
+        sesion.estado = "Asignada"
+
+    # 6. Persistir conflictos trazables
     for conf in resultado.get("conflictos", []):
+        id_sesion = conf.get("id_sesion")
+
         conflicto_db = models.Conflicto(
             id_horario=horario_db.id,
-            id_sesion=None,
+            id_sesion=id_sesion,
             id_restriccion=conf.get("id_restriccion", "???"),
             descripcion=conf.get("descripcion", ""),
             entidad_tipo=conf.get("entidad_tipo", "Sistema"),
             entidad_id=conf.get("entidad_id", 0)
         )
+
         db.add(conflicto_db)
 
+        if id_sesion:
+            sesion_conflicto = db.query(models.SesionClase).filter(
+                models.SesionClase.id == id_sesion
+            ).first()
+
+            if sesion_conflicto:
+                sesion_conflicto.estado = "Conflicto"
+
+    # 7. Actualizar estado del horario
     estado_final = "Valido" if resultado["exito"] else "No_Factible"
     horario_db.estado = estado_final
     horario_db.puntaje_total = puntaje_total
@@ -398,87 +462,6 @@ def generar_horario(
         "asignaciones": asignaciones_out,
         "conflictos": resultado.get("conflictos", []),
         "reporte_blandas": resultado.get("reporte_blandas", {})
-    }
-
-
-def _construir_asignaciones_out(asignaciones: list, horario_id: int) -> list:
-    resultado = []
-
-    for asig in asignaciones:
-        resultado.append({
-            "horario_id": horario_id,
-            "docente_nombre": asig["docente"].nombre,
-            "aula_codigo": asig["aula"].codigo,
-            "franja_dia": asig["franja"].dia_semana,
-            "franja_inicio": asig["franja"].hora_inicio,
-            "franja_fin": asig["franja"].hora_fin,
-            "curso_nombre": asig["curso"].nombre,
-            "grupo_nombre": asig["grupo"].nombre_grupo,
-            "penalizacion": asig.get("penalizacion", 0.0)
-        })
-
-    return resultado
-
-
-# ==============================================================================
-# HORARIOS GENERADOS
-# ==============================================================================
-@app.get("/api/horarios", tags=["Horarios"])
-def listar_horarios(db: Session = Depends(get_db)):
-    horarios = crud.get_horarios(db)
-
-    return [
-        {
-            "id": h.id,
-            "fecha_generacion": h.fecha_generacion,
-            "estado": h.estado,
-            "puntaje_total": h.puntaje_total,
-            "es_oficial": h.es_oficial,
-            "num_asignaciones": len(h.asignaciones),
-            "num_conflictos": len(h.conflictos)
-        }
-        for h in horarios
-    ]
-
-
-@app.get("/api/horarios/{horario_id}", tags=["Horarios"])
-def obtener_horario(horario_id: int, db: Session = Depends(get_db)):
-    horario = crud.get_horario(db, horario_id)
-
-    if not horario:
-        raise HTTPException(status_code=404, detail="Horario no encontrado")
-
-    asignaciones_out = []
-    for asig in horario.asignaciones:
-        asignaciones_out.append({
-            "id": asig.id,
-            "docente_nombre": asig.docente.nombre if asig.docente else "N/A",
-            "aula_codigo": asig.aula.codigo if asig.aula else "N/A",
-            "franja_dia": asig.franja.dia_semana if asig.franja else "N/A",
-            "franja_inicio": asig.franja.hora_inicio if asig.franja else "",
-            "franja_fin": asig.franja.hora_fin if asig.franja else "",
-            "estado": asig.estado,
-            "penalizacion": asig.puntaje_penalizacion
-        })
-
-    conflictos_out = []
-    for conf in horario.conflictos:
-        conflictos_out.append({
-            "id": conf.id,
-            "id_restriccion": conf.id_restriccion,
-            "descripcion": conf.descripcion,
-            "entidad_tipo": conf.entidad_tipo,
-            "entidad_id": conf.entidad_id
-        })
-
-    return {
-        "id": horario.id,
-        "fecha_generacion": horario.fecha_generacion,
-        "estado": horario.estado,
-        "puntaje_total": horario.puntaje_total,
-        "es_oficial": horario.es_oficial,
-        "asignaciones": asignaciones_out,
-        "conflictos": conflictos_out
     }
 
 

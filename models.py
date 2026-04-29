@@ -204,7 +204,7 @@ class SesionClase(Base):
     # Relaciones
     grupo = relationship("Grupo", back_populates="sesiones")
     asignacion = relationship("Asignacion", back_populates="sesion", uselist=False)
-
+    conflictos = relationship("Conflicto", back_populates="sesion")
 
 # ==============================================================================
 # ENTIDAD: Horario
@@ -271,3 +271,4 @@ class Conflicto(Base):
 
     # Relaciones
     horario = relationship("Horario", back_populates="conflictos")
+    sesion = relationship("SesionClase", back_populates="conflictos")
