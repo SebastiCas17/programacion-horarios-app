@@ -14,12 +14,21 @@ Este MVP implementa el núcleo funcional de un sistema de programación de horar
 
 ## ⚙️ Requisitos Previos
 
-- Python 3.11 o superior
-- pip (gestor de paquetes de Python)
-- Visual Studio Code (recomendado)
-- Navegador web moderno
+- Python 3.11+
+- Docker Desktop
+- Visual Studio Code
+- Git
 
 ---
+
+## Tecnologías
+
+- FastAPI
+- SQLAlchemy
+- PostgreSQL 15
+- HTML, CSS y JavaScript
+- Redis 7
+- Docker Compose
 
 ## 🚀 Instalación
 
@@ -52,6 +61,15 @@ uvicorn main:app --reload --port 8000
 Abre el navegador en: **http://localhost:8000**
 
 La base de datos SQLite (`horarios.db`) se crea automáticamente al iniciar.
+
+
+## Ejecución con PostgreSQL
+
+### 1. Levantar PostgreSQL y Redis
+
+```bash
+docker compose up -d
+
 
 ---
 
