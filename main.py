@@ -14,6 +14,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
 from sqlalchemy.orm import Session
 from typing import List
+import os
 
 import models, schemas, crud
 from database import engine, get_db
@@ -32,6 +33,53 @@ app = FastAPI(
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
+# ==============================================================================
+# USUARIO ADMINISTRADOR INICIAL
+# ==============================================================================
+def crear_admin_inicial():
+    """
+    Crea automáticamente un usuario administrador inicial si no existe.
+    Esto permite que el sistema pueda usarse inmediatamente después de levantar Docker.
+    """
+
+    db = next(get_db())
+
+    try:
+        admin_email = os.getenv("ADMIN_EMAIL", "admin@horarios.edu")
+        admin_password = os.getenv("ADMIN_PASSWORD", "admin123")
+        admin_name = os.getenv("ADMIN_NAME", "Administrador del Sistema")
+
+        existente = crud.get_usuario_por_correo(db, admin_email)
+
+        if existente:
+            print(f"Usuario administrador ya existe: {admin_email}")
+            return
+
+        admin = schemas.UsuarioCreate(
+            nombre=admin_name,
+            correo=admin_email,
+            password=admin_password,
+            rol="Administrador",
+            estado=True
+        )
+
+        crud.create_usuario(db, admin)
+
+        print("Usuario administrador inicial creado correctamente")
+        print(f"Correo: {admin_email}")
+        print(f"Contraseña: {admin_password}")
+
+    finally:
+        db.close()
+
+
+@app.on_event("startup")
+def startup_event():
+    """
+    Evento de arranque de FastAPI.
+    Garantiza que exista un administrador inicial.
+    """
+    crear_admin_inicial()
 
 # ==============================================================================
 # RUTA PRINCIPAL
