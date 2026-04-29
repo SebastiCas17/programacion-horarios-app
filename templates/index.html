@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Programación de Horarios de Clase</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+
+<body>
+  <header class="top-banner">
+    <div>
+      <p class="institution-label">Entidad Educativa · Sistema Académico</p>
+      <h1>Programación de Horarios de Clase</h1>
+      <p class="subtitle">Motor de generación académica con validación de restricciones</p>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-title">Módulos</div>
+      <a href="#docentes">Docentes</a>
+      <a href="#cursos">Cursos</a>
+      <a href="#grupos">Grupos</a>
+      <a href="#aulas">Aulas</a>
+      <a href="#franjas">Franjas</a>
+      <a href="#disponibilidad">Disponibilidad</a>
+      <a href="#elegibilidad">Elegibilidad</a>
+      <a href="#motor">Motor</a>
+      <a href="#resultados">Resultados</a>
+    </aside>
+
+    <main class="content">
+
+      <section id="docentes" class="card">
+        <div class="card-header">
+          <h2>Docentes</h2>
+          <span>Registro de profesores activos</span>
+        </div>
+
+        <div class="form-grid">
+          <input id="docente-nombre" placeholder="Nombre docente">
+          <input id="docente-correo" placeholder="Correo institucional">
+          <select id="docente-tipo">
+            <option value="TC">Tiempo Completo (TC)</option>
+            <option value="MT">Medio Tiempo (MT)</option>
+            <option value="3/4T">Tres Cuartos (3/4T)</option>
+            <option value="1/4T">Un Cuarto (1/4T)</option>
+          </select>
+        </div>
+
+        <button class="btn-primary" onclick="crearDocente()">Guardar Docente</button>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Nombre</th>
+                <th>Correo</th>
+                <th>Tipo</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-docentes"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="cursos" class="card">
+        <div class="card-header">
+          <h2>Cursos</h2>
+          <span>Asignaturas y requerimientos académicos</span>
+        </div>
+
+        <div class="form-grid">
+          <input id="curso-nombre" placeholder="Nombre curso">
+          <input id="curso-codigo" placeholder="Código">
+          <input id="curso-creditos" type="number" value="3">
+          <input id="curso-sesiones" type="number" value="2">
+        </div>
+
+        <div class="checkbox-row">
+          <label><input id="curso-computadores" type="checkbox"> Requiere computadores</label>
+          <label><input id="curso-sillas" type="checkbox"> Requiere sillas móviles</label>
+        </div>
+
+        <button class="btn-primary" onclick="crearCurso()">Guardar Curso</button>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Nombre</th>
+                <th>Código</th>
+                <th>Sesiones</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-cursos"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="grupos" class="card">
+        <div class="card-header">
+          <h2>Grupos</h2>
+          <span>Secciones asociadas a cursos</span>
+        </div>
+
+        <div class="form-grid">
+          <select id="grupo-curso"></select>
+          <input id="grupo-nombre" placeholder="Nombre grupo">
+          <input id="grupo-cupo" type="number" value="40">
+          <input id="grupo-inscritos" type="number" value="0">
+        </div>
+
+        <button class="btn-primary" onclick="crearGrupo()">Guardar Grupo</button>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Curso ID</th>
+                <th>Grupo</th>
+                <th>Cupo</th>
+                <th>Inscritos</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-grupos"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="aulas" class="card">
+        <div class="card-header">
+          <h2>Aulas</h2>
+          <span>Inventario de espacios físicos</span>
+        </div>
+
+        <div class="form-grid">
+          <input id="aula-codigo" placeholder="Código aula">
+          <input id="aula-capacidad" type="number" value="40">
+          <input id="aula-edificio" placeholder="Edificio">
+        </div>
+
+        <div class="checkbox-row">
+          <label><input id="aula-computadores" type="checkbox"> Tiene computadores</label>
+          <label><input id="aula-sillas" type="checkbox"> Tiene sillas móviles</label>
+        </div>
+
+        <button class="btn-primary" onclick="crearAula()">Guardar Aula</button>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Código</th>
+                <th>Capacidad</th>
+                <th>Computadores</th>
+                <th>Sillas</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-aulas"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="franjas" class="card">
+        <div class="card-header">
+          <h2>Franjas Horarias</h2>
+          <span>Bloques disponibles para programación</span>
+        </div>
+
+        <div class="form-grid">
+          <select id="franja-dia">
+            <option>Lunes</option>
+            <option>Martes</option>
+            <option>Miercoles</option>
+            <option>Jueves</option>
+            <option>Viernes</option>
+            <option>Sabado</option>
+          </select>
+          <input id="franja-inicio" placeholder="07:00">
+          <input id="franja-fin" placeholder="09:00">
+        </div>
+
+        <div class="checkbox-row">
+          <label><input id="franja-bloqueada" type="checkbox"> Franja bloqueada</label>
+        </div>
+
+        <button class="btn-primary" onclick="crearFranja()">Guardar Franja</button>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Día</th>
+                <th>Inicio</th>
+                <th>Fin</th>
+                <th>Bloqueada</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-franjas"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="disponibilidad" class="card">
+        <div class="card-header">
+          <h2>Disponibilidad Docente</h2>
+          <span>Asignación de franjas disponibles</span>
+        </div>
+
+        <div class="form-grid">
+          <select id="disp-docente"></select>
+          <select id="disp-franja"></select>
+        </div>
+
+        <button class="btn-primary" onclick="crearDisponibilidad()">Guardar Disponibilidad</button>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Docente ID</th>
+                <th>Franja ID</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-disponibilidad"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="elegibilidad" class="card">
+        <div class="card-header">
+          <h2>Elegibilidad Docente-Curso</h2>
+          <span>Docentes autorizados por asignatura</span>
+        </div>
+
+        <div class="form-grid">
+          <select id="eleg-docente"></select>
+          <select id="eleg-curso"></select>
+        </div>
+
+        <button class="btn-primary" onclick="crearElegibilidad()">Guardar Elegibilidad</button>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Docente ID</th>
+                <th>Curso ID</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-elegibilidad"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="motor" class="card motor-card">
+        <div class="card-header">
+          <h2>Motor de Horarios</h2>
+          <span>Generación automática mediante backtracking</span>
+        </div>
+
+        <p class="motor-text">
+          Ejecute el motor cuando ya tenga registrados docentes, cursos, grupos, aulas, franjas,
+          disponibilidad y elegibilidad.
+        </p>
+
+        <button class="btn-generate" onclick="generarHorario()">Generar Horario</button>
+      </section>
+
+      <section id="resultados" class="card">
+        <div class="card-header">
+          <h2>Resultados</h2>
+          <span>Horario generado, estado y conflictos</span>
+        </div>
+
+        <div id="resultado-resumen" class="summary-box"></div>
+
+        <h3>Horario generado</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Curso</th>
+                <th>Grupo</th>
+                <th>Docente</th>
+                <th>Aula</th>
+                <th>Día</th>
+                <th>Hora</th>
+                <th>Penalización</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-resultados"></tbody>
+          </table>
+        </div>
+
+        <h3>Conflictos</h3>
+        <ul id="lista-conflictos" class="conflict-list"></ul>
+      </section>
+
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
