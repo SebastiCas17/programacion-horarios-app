@@ -305,12 +305,13 @@ def get_todos_los_datos(db: Session):
         ).all(),
         "disponibilidades": get_disponibilidades(db),
         "elegibilidades": get_elegibilidades(db),
+        "parametro_semestre": obtener_o_crear_parametro_activo(db)
     }
 
 
-
-
-
+# ==============================================================================
+# CRUD: Usuario (para autenticación y gestión de cuentas)
+# ==============================================================================
 
 
 from auth import generar_hash_password
@@ -337,3 +338,56 @@ def create_usuario(db: Session, usuario: schemas.UsuarioCreate):
 
 def get_usuarios(db: Session):
     return db.query(models.Usuario).all()
+
+# ==============================================================================
+# CRUD: ParametroSemestre
+# ==============================================================================
+def get_parametros_semestre(db: Session):
+    return db.query(models.ParametroSemestre).all()
+
+
+def get_parametro_activo(db: Session):
+    return db.query(models.ParametroSemestre).filter(
+        models.ParametroSemestre.activo == True
+    ).first()
+
+
+def obtener_o_crear_parametro_activo(db: Session):
+    parametro = get_parametro_activo(db)
+
+    if parametro:
+        return parametro
+
+    parametro = models.ParametroSemestre(
+        nombre="2026-1",
+        hora_inicio_lv="07:00",
+        hora_fin_lv="22:00",
+        hora_inicio_sab="07:00",
+        hora_fin_sab="13:00",
+        inicio_almuerzo="12:00",
+        fin_almuerzo="13:00",
+        max_sesiones_semana=4,
+        min_inscritos_cierre=10,
+        activo=True
+    )
+
+    db.add(parametro)
+    db.commit()
+    db.refresh(parametro)
+
+    return parametro
+
+
+def create_parametro_semestre(db: Session, parametro: schemas.ParametroSemestreCreate):
+    # Solo puede haber un semestre activo
+    if parametro.activo:
+        db.query(models.ParametroSemestre).update({"activo": False})
+        db.commit()
+
+    db_parametro = models.ParametroSemestre(**parametro.model_dump())
+
+    db.add(db_parametro)
+    db.commit()
+    db.refresh(db_parametro)
+
+    return db_parametro

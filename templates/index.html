@@ -24,6 +24,7 @@
       <a href="#cursos">Cursos</a>
       <a href="#grupos">Grupos</a>
       <a href="#aulas">Aulas</a>
+      <a href="#parametros">Parámetros</a>
       <a href="#franjas">Franjas</a>
       <a href="#disponibilidad">Disponibilidad</a>
       <a href="#elegibilidad">Elegibilidad</a>
@@ -189,6 +190,35 @@
             </thead>
             <tbody id="tabla-aulas"></tbody>
           </table>
+        </div>
+      </section>
+
+      <section id="parametros" class="card">
+        <div class="card-header">
+          <h2>Parámetros del Semestre</h2>
+          <span>Configuración institucional para validar restricciones RH-03, RH-04, RH-05, RH-11, RH-15 y RH-16</span>
+        </div>
+
+        <div class="form-grid">
+          <input id="param-nombre" placeholder="Nombre semestre" value="2026-1">
+          <input id="param-hora-inicio-lv" placeholder="Inicio Lun-Vie" value="07:00">
+          <input id="param-hora-fin-lv" placeholder="Fin Lun-Vie" value="22:00">
+          <input id="param-hora-inicio-sab" placeholder="Inicio sábado" value="07:00">
+          <input id="param-hora-fin-sab" placeholder="Fin sábado" value="13:00">
+          <input id="param-inicio-almuerzo" placeholder="Inicio almuerzo" value="12:00">
+          <input id="param-fin-almuerzo" placeholder="Fin almuerzo" value="13:00">
+          <input id="param-max-sesiones" type="number" value="4">
+          <input id="param-min-cierre" type="number" value="10">
+        </div>
+
+        <div class="checkbox-row">
+          <label><input id="param-activo" type="checkbox" checked> Semestre activo</label>
+        </div>
+
+        <button class="btn-primary" onclick="guardarParametroSemestre()">Guardar Parámetros</button>
+
+        <div id="parametro-estado" class="summary-box">
+          Parámetros no cargados.
         </div>
       </section>
 

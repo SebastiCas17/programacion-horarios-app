@@ -202,7 +202,9 @@ class GenerarHorarioRequest(BaseModel):
 
 
 
-
+# ==============================================================================
+# SCHEMA: Autenticación y gestión de usuarios
+# ==============================================================================
 
 class UsuarioCreate(BaseModel):
     nombre: str
@@ -232,3 +234,31 @@ class TokenOut(BaseModel):
     access_token: str
     token_type: str
     usuario: UsuarioOut
+
+
+
+# ==============================================================================
+# SCHEMAS: ParametroSemestre
+# ==============================================================================
+class ParametroSemestreBase(BaseModel):
+    nombre: str = "2026-1"
+    hora_inicio_lv: str = "07:00"
+    hora_fin_lv: str = "22:00"
+    hora_inicio_sab: str = "07:00"
+    hora_fin_sab: str = "13:00"
+    inicio_almuerzo: str = "12:00"
+    fin_almuerzo: str = "13:00"
+    max_sesiones_semana: int = 4
+    min_inscritos_cierre: int = 10
+    activo: bool = True
+
+
+class ParametroSemestreCreate(ParametroSemestreBase):
+    pass
+
+
+class ParametroSemestreOut(ParametroSemestreBase):
+    id: int
+
+    class Config:
+        from_attributes = True

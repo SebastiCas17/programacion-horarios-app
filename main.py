@@ -83,6 +83,42 @@ def listar_usuarios(
 ):
     return crud.get_usuarios(db)
 
+# ==============================================================================
+# PARAMETROS DE SEMESTRE
+# ==============================================================================
+@app.get(
+    "/api/parametros-semestre/activo",
+    response_model=schemas.ParametroSemestreOut,
+    tags=["Parámetros Semestre"]
+)
+def obtener_parametro_semestre_activo(db: Session = Depends(get_db)):
+    return crud.obtener_o_crear_parametro_activo(db)
+
+
+@app.get(
+    "/api/parametros-semestre",
+    response_model=List[schemas.ParametroSemestreOut],
+    tags=["Parámetros Semestre"]
+)
+def listar_parametros_semestre(
+    db: Session = Depends(get_db),
+    usuario=Depends(exigir_roles("Administrador", "Coordinador"))
+):
+    return crud.get_parametros_semestre(db)
+
+
+@app.post(
+    "/api/parametros-semestre",
+    response_model=schemas.ParametroSemestreOut,
+    tags=["Parámetros Semestre"]
+)
+def crear_parametro_semestre(
+    parametro: schemas.ParametroSemestreCreate,
+    db: Session = Depends(get_db),
+    usuario=Depends(exigir_roles("Administrador", "Coordinador"))
+):
+    return crud.create_parametro_semestre(db, parametro)
+
 
 # ==============================================================================
 # DOCENTES

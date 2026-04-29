@@ -141,6 +141,7 @@ function option(value, text) {
 
 async function cargarTodo() {
   await Promise.all([
+    cargarParametroSemestre(),
     cargarDocentes(),
     cargarCursos(),
     cargarGrupos(),
@@ -393,6 +394,57 @@ async function eliminarAula(id) {
   });
 
   await cargarAulas();
+}
+
+// ==========================================================
+// PARAMETROS DE SEMESTRE
+// ==========================================================
+
+async function cargarParametroSemestre() {
+  const parametro = await api("/api/parametros-semestre/activo");
+
+  document.getElementById("param-nombre").value = parametro.nombre;
+  document.getElementById("param-hora-inicio-lv").value = parametro.hora_inicio_lv;
+  document.getElementById("param-hora-fin-lv").value = parametro.hora_fin_lv;
+  document.getElementById("param-hora-inicio-sab").value = parametro.hora_inicio_sab;
+  document.getElementById("param-hora-fin-sab").value = parametro.hora_fin_sab;
+  document.getElementById("param-inicio-almuerzo").value = parametro.inicio_almuerzo;
+  document.getElementById("param-fin-almuerzo").value = parametro.fin_almuerzo;
+  document.getElementById("param-max-sesiones").value = parametro.max_sesiones_semana;
+  document.getElementById("param-min-cierre").value = parametro.min_inscritos_cierre;
+  document.getElementById("param-activo").checked = parametro.activo;
+
+  document.getElementById("parametro-estado").innerHTML = `
+    <strong>Semestre activo:</strong> ${parametro.nombre}<br>
+    <strong>Lun-Vie:</strong> ${parametro.hora_inicio_lv} - ${parametro.hora_fin_lv}<br>
+    <strong>Sábado:</strong> ${parametro.hora_inicio_sab} - ${parametro.hora_fin_sab}<br>
+    <strong>Almuerzo:</strong> ${parametro.inicio_almuerzo} - ${parametro.fin_almuerzo}<br>
+    <strong>Máx. sesiones:</strong> ${parametro.max_sesiones_semana}<br>
+    <strong>Mín. cierre grupo:</strong> ${parametro.min_inscritos_cierre}
+  `;
+}
+
+async function guardarParametroSemestre() {
+  const parametro = {
+    nombre: document.getElementById("param-nombre").value.trim(),
+    hora_inicio_lv: document.getElementById("param-hora-inicio-lv").value.trim(),
+    hora_fin_lv: document.getElementById("param-hora-fin-lv").value.trim(),
+    hora_inicio_sab: document.getElementById("param-hora-inicio-sab").value.trim(),
+    hora_fin_sab: document.getElementById("param-hora-fin-sab").value.trim(),
+    inicio_almuerzo: document.getElementById("param-inicio-almuerzo").value.trim(),
+    fin_almuerzo: document.getElementById("param-fin-almuerzo").value.trim(),
+    max_sesiones_semana: Number(document.getElementById("param-max-sesiones").value),
+    min_inscritos_cierre: Number(document.getElementById("param-min-cierre").value),
+    activo: document.getElementById("param-activo").checked
+  };
+
+  await api("/api/parametros-semestre", {
+    method: "POST",
+    body: JSON.stringify(parametro)
+  });
+
+  await cargarParametroSemestre();
+  alert("Parámetros del semestre guardados correctamente");
 }
 
 

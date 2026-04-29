@@ -43,6 +43,27 @@ class ResultadoValidacion:
             entidad_id=entidad_id
         )
 
+def _hora_a_minutos(hora: str) -> int:
+    horas, minutos = hora.split(":")
+    return int(horas) * 60 + int(minutos)
+
+
+def _dentro_de_rango(franja, inicio: str, fin: str) -> bool:
+    inicio_franja = _hora_a_minutos(franja.hora_inicio)
+    fin_franja = _hora_a_minutos(franja.hora_fin)
+    inicio_rango = _hora_a_minutos(inicio)
+    fin_rango = _hora_a_minutos(fin)
+
+    return inicio_franja >= inicio_rango and fin_franja <= fin_rango
+
+
+def _se_solapa(franja, inicio: str, fin: str) -> bool:
+    inicio_franja = _hora_a_minutos(franja.hora_inicio)
+    fin_franja = _hora_a_minutos(franja.hora_fin)
+    inicio_bloqueo = _hora_a_minutos(inicio)
+    fin_bloqueo = _hora_a_minutos(fin)
+
+    return inicio_franja < fin_bloqueo and fin_franja > inicio_bloqueo
 
 def validar_candidato(candidato: dict, asignaciones_actuales: list, datos: dict) -> ResultadoValidacion:
     """
@@ -62,6 +83,40 @@ def validar_candidato(candidato: dict, asignaciones_actuales: list, datos: dict)
     sesion = candidato["sesion"]
     grupo = candidato["grupo"]
     curso = candidato["curso"]
+    parametro = datos.get("parametro_semestre")
+
+    # ------------------------------------------------------------------
+    # RH-03 y RH-04: validar rangos académicos por día
+    # ------------------------------------------------------------------
+    if parametro:
+        dia = franja.dia_semana.lower()
+
+        if dia in ["lunes", "martes", "miercoles", "miércoles", "jueves", "viernes"]:
+            if not _dentro_de_rango(franja, parametro.hora_inicio_lv, parametro.hora_fin_lv):
+                return ResultadoValidacion.fallo(
+                    "RH-03",
+                    f"La franja {franja.dia_semana} {franja.hora_inicio}-{franja.hora_fin} está fuera del rango académico Lun-Vie {parametro.hora_inicio_lv}-{parametro.hora_fin_lv}.",
+                    "Franja",
+                    franja.id
+                )
+
+        if dia in ["sabado", "sábado"]:
+            if not _dentro_de_rango(franja, parametro.hora_inicio_sab, parametro.hora_fin_sab):
+                return ResultadoValidacion.fallo(
+                    "RH-04",
+                    f"La franja de sábado {franja.hora_inicio}-{franja.hora_fin} está fuera del rango permitido {parametro.hora_inicio_sab}-{parametro.hora_fin_sab}.",
+                    "Franja",
+                    franja.id
+                )
+
+        # RH-05: franja de almuerzo parametrizada
+        if _se_solapa(franja, parametro.inicio_almuerzo, parametro.fin_almuerzo):
+            return ResultadoValidacion.fallo(
+                "RH-05",
+                f"La franja {franja.dia_semana} {franja.hora_inicio}-{franja.hora_fin} se solapa con el almuerzo {parametro.inicio_almuerzo}-{parametro.fin_almuerzo}.",
+                "Franja",
+                franja.id
+            )
 
     # ------------------------------------------------------------------
     # RH-05: La franja no debe estar bloqueada

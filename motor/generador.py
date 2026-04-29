@@ -43,74 +43,111 @@ class GeneradorHorarios:
         self.asignaciones = []   # Lista de candidatos exitosamente asignados
         self.conflictos = []     # Lista de conflictos detectados
 
-    def generar(self) -> dict:
-        """
-        Punto de entrada principal del motor.
-        
-        Returns:
-            dict con:
-              - 'exito': bool
-              - 'asignaciones': lista de dicts con la asignación completa
-              - 'conflictos': lista de dicts con los conflictos detectados
-              - 'puntaje_total': float con penalización acumulada
-              - 'reporte_blandas': dict con métricas de calidad
-        """
-        # Paso 1: Generar sesiones a asignar (una por cada sesión semanal de cada grupo)
-        sesiones = self._construir_sesiones()
+def generar(self) -> dict:
+    """
+    Punto de entrada principal del motor.
+    Ejecuta backtracking respetando parámetros del semestre y restricciones.
+    """
+    self.asignaciones = []
+    self.conflictos = []
 
-        if not sesiones:
-            return {
-                "exito": False,
-                "asignaciones": [],
-                "conflictos": [{"id_restriccion": "CONFIG", "descripcion": "No hay sesiones para programar. Verifica que existan grupos con cursos activos.", "entidad_tipo": "Sistema", "entidad_id": 0}],
-                "puntaje_total": 0.0,
-                "reporte_blandas": {}
-            }
+    # Paso 1: Construir sesiones a asignar
+    sesiones = self._construir_sesiones()
 
-        # Paso 2: Ordenar sesiones por dificultad (más difícil primero)
-        sesiones_ordenadas = self._ordenar_por_dificultad(sesiones)
-
-        # Paso 3: Ejecutar backtracking
-        self.asignaciones = []
-        self.conflictos = []
-        exito = self._backtrack(0, sesiones_ordenadas)
-
-        # Paso 4: Calcular puntaje total y reporte de blandas
-        puntaje_total = sum(a.get("penalizacion", 0.0) for a in self.asignaciones)
-        reporte = generar_reporte_blandas(self.asignaciones)
-
+    if not sesiones:
         return {
-            "exito": exito,
-            "asignaciones": self.asignaciones,
-            "conflictos": self.conflictos,
-            "puntaje_total": puntaje_total,
-            "reporte_blandas": reporte
+            "exito": False,
+            "asignaciones": [],
+            "conflictos": self.conflictos if self.conflictos else [
+                {
+                    "id_restriccion": "CONFIG",
+                    "descripcion": "No hay sesiones para programar. Verifica que existan grupos activos con cursos válidos.",
+                    "entidad_tipo": "Sistema",
+                    "entidad_id": 0
+                }
+            ],
+            "puntaje_total": 0.0,
+            "reporte_blandas": {}
         }
 
-    def _construir_sesiones(self) -> list:
-        """
-        Construye la lista de sesiones a programar.
-        Cada grupo genera tantas sesiones como sesiones_semana tenga su curso.
-        """
-        sesiones = []
-        grupos = self.datos.get("grupos", [])
-        cursos_por_id = {c.id: c for c in self.datos.get("cursos", [])}
+    # Paso 2: Ordenar por dificultad
+    sesiones_ordenadas = self._ordenar_por_dificultad(sesiones)
 
-        for grupo in grupos:
-            if grupo.estado == "Cerrado":
-                continue  # No programar grupos cerrados
-            curso = cursos_por_id.get(grupo.id_curso)
-            if not curso or not curso.estado:
-                continue
-            for num_sesion in range(1, curso.sesiones_semana + 1):
-                sesiones.append({
-                    "grupo": grupo,
-                    "curso": curso,
-                    "num_sesion": num_sesion,
-                    # ID único para identificar esta sesión en el backtracking
-                    "sesion_key": f"grupo{grupo.id}_sesion{num_sesion}"
-                })
-        return sesiones
+    # Paso 3: Backtracking
+    exito = self._backtrack(0, sesiones_ordenadas)
+
+    puntaje_total = sum(a.get("penalizacion", 0.0) for a in self.asignaciones)
+    reporte = generar_reporte_blandas(self.asignaciones)
+
+    return {
+        "exito": exito,
+        "asignaciones": self.asignaciones,
+        "conflictos": self.conflictos,
+        "puntaje_total": puntaje_total,
+        "reporte_blandas": reporte
+    }
+
+def _construir_sesiones(self) -> list:
+    """
+    Construye la lista de sesiones a programar.
+    Aplica RH-10, RH-11, RH-15 y RH-16 antes del backtracking.
+    """
+    sesiones = []
+    grupos = self.datos.get("grupos", [])
+    cursos_por_id = {c.id: c for c in self.datos.get("cursos", [])}
+    parametro = self.datos.get("parametro_semestre")
+
+    max_sesiones = parametro.max_sesiones_semana if parametro else 4
+    min_cierre = parametro.min_inscritos_cierre if parametro else 10
+
+    for grupo in grupos:
+        if grupo.estado == "Cerrado":
+            continue
+
+        curso = cursos_por_id.get(grupo.id_curso)
+
+        if not curso or not curso.estado:
+            continue
+
+        # RH-15: grupos con inscritos menores al mínimo configurable
+        if grupo.inscritos is not None and grupo.inscritos > 0 and grupo.inscritos < min_cierre:
+            self.conflictos.append({
+                "id_restriccion": "RH-15",
+                "descripcion": f"El grupo '{grupo.nombre_grupo}' tiene {grupo.inscritos} inscritos, menor al mínimo configurable de {min_cierre}. Debe marcarse como candidato a cierre.",
+                "entidad_tipo": "Grupo",
+                "entidad_id": grupo.id
+            })
+            continue
+
+        # RH-10: cada curso debe tener al menos una sesión por semana
+        if curso.sesiones_semana < 1:
+            self.conflictos.append({
+                "id_restriccion": "RH-10",
+                "descripcion": f"El curso '{curso.nombre}' no tiene sesiones semanales configuradas.",
+                "entidad_tipo": "Curso",
+                "entidad_id": curso.id
+            })
+            continue
+
+        # RH-11 y RH-16: máximo de sesiones parametrizable
+        if curso.sesiones_semana > max_sesiones:
+            self.conflictos.append({
+                "id_restriccion": "RH-11/RH-16",
+                "descripcion": f"El curso '{curso.nombre}' tiene {curso.sesiones_semana} sesiones, superando el máximo configurable de {max_sesiones}.",
+                "entidad_tipo": "Curso",
+                "entidad_id": curso.id
+            })
+            continue
+
+        for num_sesion in range(1, curso.sesiones_semana + 1):
+            sesiones.append({
+                "grupo": grupo,
+                "curso": curso,
+                "num_sesion": num_sesion,
+                "sesion_key": f"grupo{grupo.id}_sesion{num_sesion}"
+            })
+
+    return sesiones
 
     def _ordenar_por_dificultad(self, sesiones: list) -> list:
         """

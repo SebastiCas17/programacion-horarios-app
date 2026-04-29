@@ -159,6 +159,35 @@ class ElegibilidadDocente(Base):
 
 
 # ==============================================================================
+# ENTIDAD: ParametroSemestre
+# Configuración institucional del semestre activo
+# ==============================================================================
+class ParametroSemestre(Base):
+    __tablename__ = "parametros_semestre"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nombre = Column(String(20), unique=True, nullable=False, default="2026-1")
+
+    # Rango académico Lun-Vie
+    hora_inicio_lv = Column(String(5), nullable=False, default="07:00")
+    hora_fin_lv = Column(String(5), nullable=False, default="22:00")
+
+    # Rango académico sábado
+    hora_inicio_sab = Column(String(5), nullable=False, default="07:00")
+    hora_fin_sab = Column(String(5), nullable=False, default="13:00")
+
+    # Franja bloqueada de almuerzo
+    inicio_almuerzo = Column(String(5), nullable=False, default="12:00")
+    fin_almuerzo = Column(String(5), nullable=False, default="13:00")
+
+    # Reglas parametrizables
+    max_sesiones_semana = Column(Integer, nullable=False, default=4)
+    min_inscritos_cierre = Column(Integer, nullable=False, default=10)
+
+    activo = Column(Boolean, nullable=False, default=True)
+
+
+# ==============================================================================
 # ENTIDAD: SesionClase
 # Unidad de asignación del motor. Un grupo genera tantas sesiones como
 # indique sesiones_semana del curso
