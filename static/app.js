@@ -1,7 +1,8 @@
 // ==========================================================
 // app.js
 // Frontend para Programación de Horarios de Clase
-// Incluye integración JWT con FastAPI
+// Incluye JWT, roles, seed académico, motor, historial,
+// publicación oficial y exportación CSV.
 // ==========================================================
 
 
@@ -148,6 +149,41 @@ async function cargarTodo() {
     cargarElegibilidad(),
     cargarHorarios()
   ]);
+}
+
+
+// ==========================================================
+// DATOS INICIALES / SEED ACADÉMICO
+// ==========================================================
+
+async function cargarDatosIniciales() {
+  if (!confirm("¿Deseas cargar los datos académicos iniciales? No se duplicarán datos existentes.")) {
+    return;
+  }
+
+  const resultado = await api("/api/seed/datos-academicos", {
+    method: "POST"
+  });
+
+  const contenedor = document.getElementById("seed-resultado");
+
+  if (contenedor) {
+    contenedor.innerHTML = `
+      <strong>${resultado.mensaje}</strong><br>
+      Docentes creados: ${resultado.creados_en_esta_ejecucion.docentes}<br>
+      Cursos creados: ${resultado.creados_en_esta_ejecucion.cursos}<br>
+      Grupos creados: ${resultado.creados_en_esta_ejecucion.grupos}<br>
+      Aulas creadas: ${resultado.creados_en_esta_ejecucion.aulas}<br>
+      Franjas creadas: ${resultado.creados_en_esta_ejecucion.franjas}<br>
+      Elegibilidades creadas: ${resultado.creados_en_esta_ejecucion.elegibilidades}<br>
+      Disponibilidades creadas: ${resultado.creados_en_esta_ejecucion.disponibilidades}<br>
+      Sesiones preparadas: ${resultado.total_sesiones_preparadas}
+    `;
+  }
+
+  await cargarTodo();
+
+  alert("Datos iniciales cargados correctamente");
 }
 
 

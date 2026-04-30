@@ -31,6 +31,7 @@
       <a href="#motor">Motor</a>
       <a href="#resultados">Resultados</a>
       <a href="#historial-horarios">Historial</a>
+      <a href="#seed">Datos iniciales</a>
     </aside>
 
     <main class="content">
@@ -51,6 +52,26 @@
 
         <div id="login-estado" class="summary-box">
           No has iniciado sesión.
+        </div>
+      </section>
+
+      <section id="seed" class="card">
+        <div class="card-header">
+          <h2>Datos Iniciales</h2>
+          <span>Carga rápida de datos académicos para pruebas del motor</span>
+        </div>
+
+        <p class="motor-text">
+          Esta opción carga docentes, cursos, grupos, aulas, franjas, disponibilidad y elegibilidad
+          sin duplicar información existente.
+        </p>
+
+        <button class="btn-generate" onclick="cargarDatosIniciales()">
+          Cargar Datos Iniciales
+        </button>
+
+        <div id="seed-resultado" class="summary-box">
+          Aún no se han cargado datos desde esta sección.
         </div>
       </section>
 
