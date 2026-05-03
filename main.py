@@ -7,7 +7,8 @@ permite generar horarios con backtracking, publicar horarios oficiales, exportar
 """
 
 from fastapi import FastAPI, Depends, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import StreamingResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.requests import Request
@@ -29,12 +30,14 @@ from seed_data import cargar_datos_academicos_iniciales
 # ==============================================================================
 # INICIALIZACIÓN DE BASE DE DATOS
 # ==============================================================================
+
 models.Base.metadata.create_all(bind=engine)
 
 
 # ==============================================================================
 # APLICACIÓN FASTAPI
 # ==============================================================================
+
 app = FastAPI(
     title="Programación de Horarios de Clase",
     description="Motor de generación de horarios académicos con backtracking — Universidad El Bosque",
@@ -45,41 +48,98 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 
-# ==============================================================================
-# USUARIO ADMINISTRADOR INICIAL
-# ==============================================================================
-def crear_admin_inicial():
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
     """
-    Crea automáticamente un usuario administrador inicial si no existe.
-    Esto permite que el sistema pueda usarse inmediatamente después de levantar Docker.
+    Convierte errores de validación Pydantic en mensajes legibles para el frontend.
+    Así el usuario no ve errores técnicos ni estructuras difíciles de leer.
+    """
+
+    mensajes = []
+
+    for error in exc.errors():
+        ubicacion = [
+            str(item)
+            for item in error.get("loc", [])
+            if item not in ("body", "query", "path")
+        ]
+
+        campo = ".".join(ubicacion) if ubicacion else "dato"
+        mensaje = error.get("msg", "Dato inválido").replace("Value error, ", "")
+
+        mensajes.append(f"{campo}: {mensaje}")
+
+    return JSONResponse(
+        status_code=422,
+        content={
+            "detail": " | ".join(mensajes)
+        }
+    )
+
+
+# ==============================================================================
+# USUARIOS INICIALES DEL SISTEMA
+# ==============================================================================
+
+def crear_usuarios_iniciales():
+    """
+    Crea automáticamente los usuarios iniciales del sistema si no existen.
+    Roles disponibles:
+    - Administrador
+    - Coordinador
+    - Consulta
     """
 
     db = next(get_db())
 
     try:
-        admin_email = os.getenv("ADMIN_EMAIL", "admin@horarios.edu")
-        admin_password = os.getenv("ADMIN_PASSWORD", "admin123")
-        admin_name = os.getenv("ADMIN_NAME", "Administrador del Sistema")
+        usuarios_iniciales = [
+            {
+                "nombre": os.getenv("ADMIN_NAME", "Administrador del Sistema"),
+                "correo": os.getenv("ADMIN_EMAIL", "admin@horarios.edu"),
+                "password": os.getenv("ADMIN_PASSWORD", "admin123"),
+                "rol": "Administrador"
+            },
+            {
+                "nombre": os.getenv("COORDINADOR_NAME", "Coordinador Académico"),
+                "correo": os.getenv("COORDINADOR_EMAIL", "coordinador@horarios.edu"),
+                "password": os.getenv("COORDINADOR_PASSWORD", "coord123"),
+                "rol": "Coordinador"
+            },
+            {
+                "nombre": os.getenv("CONSULTA_NAME", "Usuario de Consulta"),
+                "correo": os.getenv("CONSULTA_EMAIL", "consulta@horarios.edu"),
+                "password": os.getenv("CONSULTA_PASSWORD", "consulta123"),
+                "rol": "Consulta"
+            }
+        ]
 
-        existente = crud.get_usuario_por_correo(db, admin_email)
+        for datos_usuario in usuarios_iniciales:
+            existente = crud.get_usuario_por_correo(db, datos_usuario["correo"])
 
-        if existente:
-            print(f"Usuario administrador ya existe: {admin_email}", flush=True)
-            return
+            if existente:
+                print(
+                    f"Usuario ya existe: {datos_usuario['correo']} - Rol: {existente.rol}",
+                    flush=True
+                )
+                continue
 
-        admin = schemas.UsuarioCreate(
-            nombre=admin_name,
-            correo=admin_email,
-            password=admin_password,
-            rol="Administrador",
-            estado=True
-        )
+            usuario = schemas.UsuarioCreate(
+                nombre=datos_usuario["nombre"],
+                correo=datos_usuario["correo"],
+                password=datos_usuario["password"],
+                rol=datos_usuario["rol"],
+                estado=True
+            )
 
-        crud.create_usuario(db, admin)
+            crud.create_usuario(db, usuario)
 
-        print("Usuario administrador inicial creado correctamente", flush=True)
-        print(f"Correo: {admin_email}", flush=True)
-        print(f"Contraseña: {admin_password}", flush=True)
+            print(
+                f"Usuario inicial creado: {datos_usuario['correo']} - Rol: {datos_usuario['rol']}",
+                flush=True
+            )
+
+        print("Validación de usuarios iniciales finalizada.", flush=True)
 
     finally:
         db.close()
@@ -89,30 +149,46 @@ def crear_admin_inicial():
 def startup_event():
     """
     Evento de arranque de FastAPI.
-    Garantiza que exista un administrador inicial.
+    Garantiza que existan los usuarios iniciales del sistema.
     """
-    crear_admin_inicial()
+    crear_usuarios_iniciales()
 
 
 # ==============================================================================
-# RUTA PRINCIPAL — INTERFAZ WEB
+# RUTAS PRINCIPALES — INTERFAZ WEB POR ROL
 # ==============================================================================
+
 @app.get("/")
-def root(request: Request):
-    """
-    Sirve la interfaz web principal.
-    """
-    return templates.TemplateResponse("index.html", {"request": request})
+def root():
+    return RedirectResponse(url="/login")
+
+
+@app.get("/login")
+def login_view(request: Request):
+    return templates.TemplateResponse("login.html", {"request": request})
+
+
+@app.get("/admin")
+def admin_view(request: Request):
+    return templates.TemplateResponse("admin.html", {"request": request})
+
+
+@app.get("/coordinador")
+def coordinador_view(request: Request):
+    return templates.TemplateResponse("coordinador.html", {"request": request})
+
+
+@app.get("/consulta")
+def consulta_view(request: Request):
+    return templates.TemplateResponse("consulta.html", {"request": request})
 
 
 # ==============================================================================
 # AUTENTICACIÓN Y USUARIOS
 # ==============================================================================
+
 @app.post("/api/auth/login", response_model=schemas.TokenOut, tags=["Autenticación"])
 def login(datos: schemas.LoginRequest, db: Session = Depends(get_db)):
-    """
-    Inicia sesión y retorna un token JWT.
-    """
     usuario = crud.get_usuario_por_correo(db, datos.correo)
 
     if not usuario or not verificar_password(datos.password, usuario.password_hash):
@@ -138,10 +214,6 @@ def crear_usuario(
     usuario: schemas.UsuarioCreate,
     db: Session = Depends(get_db)
 ):
-    """
-    Crea un usuario del sistema.
-    Se deja abierto para permitir el primer registro si fuera necesario.
-    """
     existente = crud.get_usuario_por_correo(db, usuario.correo)
 
     if existente:
@@ -155,24 +227,19 @@ def listar_usuarios(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador"))
 ):
-    """
-    Lista usuarios registrados. Solo Administrador.
-    """
     return crud.get_usuarios(db)
 
 
 # ==============================================================================
 # PARÁMETROS DE SEMESTRE
 # ==============================================================================
+
 @app.get(
     "/api/parametros-semestre/activo",
     response_model=schemas.ParametroSemestreOut,
     tags=["Parámetros Semestre"]
 )
 def obtener_parametro_semestre_activo(db: Session = Depends(get_db)):
-    """
-    Obtiene el semestre activo. Si no existe, crea uno por defecto.
-    """
     return crud.obtener_o_crear_parametro_activo(db)
 
 
@@ -185,9 +252,6 @@ def listar_parametros_semestre(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
-    """
-    Lista parámetros de semestre.
-    """
     return crud.get_parametros_semestre(db)
 
 
@@ -201,20 +265,15 @@ def crear_parametro_semestre(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
-    """
-    Crea o actualiza parámetros de semestre.
-    """
     return crud.create_parametro_semestre(db, parametro)
 
 
 # ==============================================================================
 # DOCENTES
 # ==============================================================================
+
 @app.get("/api/docentes", response_model=List[schemas.DocenteOut], tags=["Docentes"])
 def listar_docentes(db: Session = Depends(get_db)):
-    """
-    Lista docentes activos.
-    """
     return crud.get_docentes(db)
 
 
@@ -224,9 +283,6 @@ def crear_docente(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
-    """
-    Crea un docente.
-    """
     return crud.create_docente(db, docente)
 
 
@@ -236,9 +292,6 @@ def eliminar_docente(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
-    """
-    Elimina un docente.
-    """
     resultado = crud.delete_docente(db, docente_id)
 
     if not resultado:
@@ -250,11 +303,9 @@ def eliminar_docente(
 # ==============================================================================
 # CURSOS
 # ==============================================================================
+
 @app.get("/api/cursos", response_model=List[schemas.CursoOut], tags=["Cursos"])
 def listar_cursos(db: Session = Depends(get_db)):
-    """
-    Lista cursos activos.
-    """
     return crud.get_cursos(db)
 
 
@@ -264,9 +315,6 @@ def crear_curso(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
-    """
-    Crea un curso.
-    """
     return crud.create_curso(db, curso)
 
 
@@ -276,9 +324,6 @@ def eliminar_curso(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
-    """
-    Elimina un curso.
-    """
     resultado = crud.delete_curso(db, curso_id)
 
     if not resultado:
@@ -290,11 +335,9 @@ def eliminar_curso(
 # ==============================================================================
 # GRUPOS
 # ==============================================================================
+
 @app.get("/api/grupos", response_model=List[schemas.GrupoOut], tags=["Grupos"])
 def listar_grupos(db: Session = Depends(get_db)):
-    """
-    Lista grupos.
-    """
     return crud.get_grupos(db)
 
 
@@ -304,13 +347,16 @@ def crear_grupo(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
-    """
-    Crea un grupo asociado a un curso.
-    """
     curso = crud.get_curso(db, grupo.id_curso)
 
     if not curso:
         raise HTTPException(status_code=404, detail="Curso no encontrado")
+
+    if not curso.estado:
+        raise HTTPException(
+            status_code=400,
+            detail="No se puede crear un grupo para un curso inactivo."
+        )
 
     return crud.create_grupo(db, grupo)
 
@@ -321,9 +367,6 @@ def eliminar_grupo(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
-    """
-    Elimina un grupo.
-    """
     resultado = crud.delete_grupo(db, grupo_id)
 
     if not resultado:
@@ -335,11 +378,9 @@ def eliminar_grupo(
 # ==============================================================================
 # AULAS
 # ==============================================================================
+
 @app.get("/api/aulas", response_model=List[schemas.AulaOut], tags=["Aulas"])
 def listar_aulas(db: Session = Depends(get_db)):
-    """
-    Lista aulas activas.
-    """
     return crud.get_aulas(db)
 
 
@@ -349,9 +390,6 @@ def crear_aula(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
-    """
-    Crea un aula.
-    """
     return crud.create_aula(db, aula)
 
 
@@ -361,9 +399,6 @@ def eliminar_aula(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
-    """
-    Elimina un aula.
-    """
     resultado = crud.delete_aula(db, aula_id)
 
     if not resultado:
@@ -375,11 +410,9 @@ def eliminar_aula(
 # ==============================================================================
 # FRANJAS HORARIAS
 # ==============================================================================
+
 @app.get("/api/franjas", response_model=List[schemas.FranjaOut], tags=["Franjas"])
 def listar_franjas(db: Session = Depends(get_db)):
-    """
-    Lista franjas horarias.
-    """
     return crud.get_franjas(db)
 
 
@@ -389,9 +422,6 @@ def crear_franja(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
-    """
-    Crea una franja horaria.
-    """
     return crud.create_franja(db, franja)
 
 
@@ -401,9 +431,6 @@ def eliminar_franja(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
-    """
-    Elimina una franja horaria.
-    """
     resultado = crud.delete_franja(db, franja_id)
 
     if not resultado:
@@ -415,11 +442,9 @@ def eliminar_franja(
 # ==============================================================================
 # DISPONIBILIDAD DOCENTE
 # ==============================================================================
+
 @app.get("/api/disponibilidad", response_model=List[schemas.DisponibilidadOut], tags=["Disponibilidad"])
 def listar_disponibilidades(db: Session = Depends(get_db)):
-    """
-    Lista disponibilidades docentes.
-    """
     return crud.get_disponibilidades(db)
 
 
@@ -429,9 +454,6 @@ def crear_disponibilidad(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
-    """
-    Crea disponibilidad docente.
-    """
     return crud.create_disponibilidad(db, disp)
 
 
@@ -441,9 +463,6 @@ def eliminar_disponibilidad(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
-    """
-    Elimina disponibilidad docente.
-    """
     resultado = crud.delete_disponibilidad(db, disp_id)
 
     if not resultado:
@@ -455,11 +474,9 @@ def eliminar_disponibilidad(
 # ==============================================================================
 # ELEGIBILIDAD DOCENTE-CURSO
 # ==============================================================================
+
 @app.get("/api/elegibilidad", response_model=List[schemas.ElegibilidadOut], tags=["Elegibilidad"])
 def listar_elegibilidades(db: Session = Depends(get_db)):
-    """
-    Lista elegibilidades docente-curso.
-    """
     return crud.get_elegibilidades(db)
 
 
@@ -469,9 +486,6 @@ def crear_elegibilidad(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
-    """
-    Crea elegibilidad docente-curso.
-    """
     return crud.create_elegibilidad(db, eleg)
 
 
@@ -481,9 +495,6 @@ def eliminar_elegibilidad(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
-    """
-    Elimina elegibilidad docente-curso.
-    """
     resultado = crud.delete_elegibilidad(db, eleg_id)
 
     if not resultado:
@@ -495,26 +506,14 @@ def eliminar_elegibilidad(
 # ==============================================================================
 # MOTOR DE HORARIOS
 # ==============================================================================
+
 @app.post("/api/generar-horario", tags=["Motor"])
 def generar_horario(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
-    """
-    Ejecuta el motor de backtracking con sesiones reales.
-
-    Flujo:
-    1. Prepara sesiones reales en la base de datos.
-    2. Carga todos los datos en memoria.
-    3. Ejecuta el algoritmo de backtracking.
-    4. Persiste asignaciones y conflictos.
-    5. Retorna el horario generado.
-    """
-
-    # 1. Preparar sesiones reales en BD
     crud.preparar_sesiones_para_motor(db)
 
-    # 2. Cargar datos en memoria
     datos = crud.get_todos_los_datos(db)
 
     if not datos["grupos"]:
@@ -535,16 +534,13 @@ def generar_horario(
             detail="No hay sesiones reales generadas para programar."
         )
 
-    # 3. Crear horario
     horario_db = crud.create_horario(db)
 
-    # 4. Ejecutar motor
     motor = GeneradorHorarios(datos)
     resultado = motor.generar()
 
     puntaje_total = resultado.get("puntaje_total", 0.0)
 
-    # 5. Persistir asignaciones reales
     for asig in resultado.get("asignaciones", []):
         sesion = asig["sesion"]
 
@@ -561,7 +557,6 @@ def generar_horario(
         db.add(asignacion_db)
         sesion.estado = "Asignada"
 
-    # 6. Persistir conflictos trazables
     for conf in resultado.get("conflictos", []):
         id_sesion = conf.get("id_sesion")
 
@@ -584,7 +579,6 @@ def generar_horario(
             if sesion_conflicto:
                 sesion_conflicto.estado = "Conflicto"
 
-    # 7. Actualizar estado del horario
     estado_final = "Valido" if resultado["exito"] else "No_Factible"
     horario_db.estado = estado_final
     horario_db.puntaje_total = puntaje_total
@@ -610,9 +604,6 @@ def generar_horario(
 
 
 def _construir_asignaciones_out(asignaciones: list, horario_id: int) -> list:
-    """
-    Construye la lista de asignaciones para el frontend con datos expandidos.
-    """
     resultado = []
 
     for asig in asignaciones:
@@ -636,12 +627,9 @@ def _construir_asignaciones_out(asignaciones: list, horario_id: int) -> list:
 # ==============================================================================
 # HORARIOS GENERADOS, PUBLICACIÓN OFICIAL Y EXPORTACIÓN
 # ==============================================================================
+
 @app.get("/api/horarios", tags=["Horarios"])
 def listar_horarios(db: Session = Depends(get_db)):
-    """
-    Lista todos los horarios generados.
-    Permite al frontend mostrar historial, estado y opción de publicar/exportar.
-    """
     horarios = crud.get_horarios(db)
 
     return [
@@ -663,9 +651,6 @@ def obtener_horario(
     horario_id: int,
     db: Session = Depends(get_db)
 ):
-    """
-    Obtiene el detalle completo de un horario generado.
-    """
     horario = crud.get_horario(db, horario_id)
 
     if not horario:
@@ -731,10 +716,6 @@ def publicar_horario(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
-    """
-    Marca un horario válido como oficial e inmutable.
-    Cumple RH-14: versión oficial publicada.
-    """
     horario = crud.publicar_horario(db, horario_id)
 
     if not horario:
@@ -757,9 +738,6 @@ def eliminar_horario(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador"))
 ):
-    """
-    Elimina un horario solo si no es oficial.
-    """
     resultado = crud.delete_horario(db, horario_id)
 
     if not resultado:
@@ -777,10 +755,6 @@ def exportar_horario_csv(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador", "Consulta"))
 ):
-    """
-    Exporta el horario generado en formato CSV.
-    Puede abrirse en Excel como insumo del proceso académico.
-    """
     horario = crud.get_horario(db, horario_id)
 
     if not horario:
@@ -839,7 +813,7 @@ def exportar_horario_csv(
 
     output.seek(0)
 
-    filename = f"horario_{horario.id}.csv"
+    filename = f"horario_{horario_id}.csv"
 
     response = StreamingResponse(
         iter([output.getvalue()]),
@@ -854,15 +828,12 @@ def exportar_horario_csv(
 # ==============================================================================
 # SEED ACADÉMICO Y DATOS DE EJEMPLO
 # ==============================================================================
+
 @app.post("/api/seed/datos-academicos", tags=["Seed"])
 def cargar_seed_academico(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
-    """
-    Carga datos académicos iniciales sin duplicarlos.
-    Permite probar el sistema después de levantar Docker desde cero.
-    """
     try:
         return cargar_datos_academicos_iniciales(db)
 
@@ -879,10 +850,6 @@ def cargar_datos_ejemplo(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
-    """
-    Compatibilidad con el endpoint antiguo.
-    Ahora usa la carga idempotente de seed académico.
-    """
     try:
         return cargar_datos_academicos_iniciales(db)
 
