@@ -4,125 +4,161 @@ motor/restricciones.py
 Restricciones Blandas — Cálculo de penalizaciones.
 No invalidan la asignación, pero influyen en la calidad del horario.
 
-RS-01: Penalización por sesiones del mismo curso en días consecutivos
-RS-02: Penalización por bajo aprovechamiento docente
+RS-01: Penalización por sesiones del mismo grupo en días consecutivos.
+RS-02: Penalización leve por sobrecarga docente.
+RS-03: Penalización leve por usar docente flexible en lugar de docente explícitamente autorizado.
 """
 
-# Orden de los días para calcular consecutividad
 ORDEN_DIAS = {
-    "Lunes": 1, "Martes": 2, "Miercoles": 3,
-    "Jueves": 4, "Viernes": 5, "Sabado": 6
+    "Lunes": 1,
+    "Martes": 2,
+    "Miercoles": 3,
+    "Miércoles": 3,
+    "Jueves": 4,
+    "Viernes": 5,
+    "Sabado": 6,
+    "Sábado": 6
 }
 
-# Penalizaciones configurables (en el documento: ParametroSemestre)
-PENALIZACION_DIAS_CONSECUTIVOS = 10.0   # RS-01: por cada par de sesiones consecutivas del mismo curso
-PENALIZACION_BAJO_APROVECHAMIENTO = 5.0  # RS-02: si docente tiene menos de 2 sesiones en el horario
+PENALIZACION_DIAS_CONSECUTIVOS = 10.0
+PENALIZACION_SOBRECARGA_DOCENTE = 5.0
+PENALIZACION_DOCENTE_FLEXIBLE = 2.0
+
+
+def _dia_orden(dia: str) -> int:
+    return ORDEN_DIAS.get(dia, 0)
 
 
 def calcular_penalizacion(candidato: dict, asignaciones_actuales: list) -> float:
     """
     Calcula la penalización total de un candidato dadas las asignaciones ya hechas.
-    
-    Args:
-        candidato: dict con 'docente', 'aula', 'franja', 'sesion', 'grupo', 'curso'
-        asignaciones_actuales: lista de asignaciones ya realizadas en este horario
-    
-    Returns:
-        float — puntaje de penalización (0.0 = sin penalización)
+    0.0 significa que el candidato no tiene penalización blanda.
     """
+
     penalizacion = 0.0
 
-    penalizacion += _penalizacion_dias_consecutivos(candidato, asignaciones_actuales)
-    penalizacion += _penalizacion_bajo_aprovechamiento(candidato, asignaciones_actuales)
+    penalizacion += _penalizacion_dias_consecutivos_mismo_grupo(
+        candidato,
+        asignaciones_actuales
+    )
+
+    penalizacion += _penalizacion_sobrecarga_docente(
+        candidato,
+        asignaciones_actuales
+    )
+
+    penalizacion += _penalizacion_docente_flexible(candidato)
 
     return penalizacion
 
 
-def _penalizacion_dias_consecutivos(candidato: dict, asignaciones_actuales: list) -> float:
+def _penalizacion_dias_consecutivos_mismo_grupo(candidato: dict, asignaciones_actuales: list) -> float:
     """
-    RS-01: Penaliza si este candidato crea sesiones del mismo curso en días consecutivos.
-    
-    Ejemplo: Cálculo de Diferencial en Lunes y Martes → penalización porque son días seguidos.
-    La preferencia es que las sesiones de un mismo curso estén distribuidas (ej: Lunes y Miércoles).
+    RS-01:
+    Penaliza si una sesión del mismo grupo queda en días consecutivos.
     """
+
     penalizacion = 0.0
-    curso_actual = candidato["curso"]
-    dia_actual = ORDEN_DIAS.get(candidato["franja"].dia_semana, 0)
+
+    grupo_actual = candidato["grupo"]
+    dia_actual = _dia_orden(candidato["franja"].dia_semana)
 
     if dia_actual == 0:
         return 0.0
 
-    # Buscar otras sesiones del mismo curso ya asignadas
     for asig in asignaciones_actuales:
-        if asig["curso"].id == curso_actual.id:
-            dia_existente = ORDEN_DIAS.get(asig["franja"].dia_semana, 0)
+        if asig["grupo"].id == grupo_actual.id:
+            dia_existente = _dia_orden(asig["franja"].dia_semana)
+
             if dia_existente > 0 and abs(dia_actual - dia_existente) == 1:
-                # Son días consecutivos
                 penalizacion += PENALIZACION_DIAS_CONSECUTIVOS
 
     return penalizacion
 
 
-def _penalizacion_bajo_aprovechamiento(candidato: dict, asignaciones_actuales: list) -> float:
+def _penalizacion_sobrecarga_docente(candidato: dict, asignaciones_actuales: list) -> float:
     """
-    RS-02: Penaliza si se asigna un docente diferente cuando hay un docente con pocas horas.
-    
-    Lógica simplificada: cuenta cuántas sesiones tiene asignadas el docente candidato.
-    Si ya tiene muchas, penaliza para distribuir carga entre docentes.
+    RS-02:
+    Penaliza levemente si el docente ya tiene varias sesiones asignadas.
+    Esto ayuda a distribuir mejor la carga docente.
     """
-    penalizacion = 0.0
+
     docente_actual = candidato["docente"]
 
-    # Contar sesiones actuales del docente
     sesiones_docente = sum(
         1 for asig in asignaciones_actuales
         if asig["docente"].id == docente_actual.id
     )
 
-    # Si el docente ya tiene muchas sesiones (más de 4), aplicar penalización leve
-    # para incentivar distribución de carga
-    if sesiones_docente > 4:
-        penalizacion += PENALIZACION_BAJO_APROVECHAMIENTO
+    if sesiones_docente >= 4:
+        return PENALIZACION_SOBRECARGA_DOCENTE
 
-    return penalizacion
+    return 0.0
+
+
+def _penalizacion_docente_flexible(candidato: dict) -> float:
+    """
+    RS-03:
+    Penaliza levemente el uso de docentes flexibles.
+    Esto permite usarlos cuando sea necesario, pero prioriza docentes explícitamente autorizados.
+    """
+
+    if candidato.get("docente_flexible", False):
+        return PENALIZACION_DOCENTE_FLEXIBLE
+
+    return 0.0
 
 
 def generar_reporte_blandas(asignaciones: list) -> dict:
     """
-    Genera un reporte con las métricas de restricciones blandas del horario completo.
-    Se usa para mostrar en la interfaz la calidad del horario generado.
-    
-    Returns:
-        dict con índices de calidad del horario
+    Genera un reporte de calidad del horario.
     """
+
     if not asignaciones:
-        return {"indice_consecutividad": 0, "pares_consecutivos": 0, "aprovechamiento_docente": {}}
+        return {
+            "indice_consecutividad": 0,
+            "pares_consecutivos": 0,
+            "aprovechamiento_docente": {},
+            "docentes_flexibles_usados": 0,
+            "total_sesiones_asignadas": 0
+        }
 
-    # Calcular pares consecutivos (RS-01)
     pares_consecutivos = 0
-    cursos_vistos = {}
-    for asig in asignaciones:
-        curso_id = asig["curso"].id
-        dia = ORDEN_DIAS.get(asig["franja"].dia_semana, 0)
-        if curso_id not in cursos_vistos:
-            cursos_vistos[curso_id] = []
-        cursos_vistos[curso_id].append(dia)
+    grupos_vistos = {}
 
-    for curso_id, dias in cursos_vistos.items():
-        dias_sorted = sorted(dias)
-        for i in range(len(dias_sorted) - 1):
-            if dias_sorted[i + 1] - dias_sorted[i] == 1:
+    for asig in asignaciones:
+        grupo_id = asig["grupo"].id
+        dia = _dia_orden(asig["franja"].dia_semana)
+
+        if dia == 0:
+            continue
+
+        if grupo_id not in grupos_vistos:
+            grupos_vistos[grupo_id] = []
+
+        grupos_vistos[grupo_id].append(dia)
+
+    for grupo_id, dias in grupos_vistos.items():
+        dias_ordenados = sorted(dias)
+
+        for i in range(len(dias_ordenados) - 1):
+            if dias_ordenados[i + 1] - dias_ordenados[i] == 1:
                 pares_consecutivos += 1
 
-    # Calcular aprovechamiento por docente (RS-02)
     aprovechamiento = {}
+    docentes_flexibles_usados = 0
+
     for asig in asignaciones:
-        nombre = asig["docente"].nombre
-        aprovechamiento[nombre] = aprovechamiento.get(nombre, 0) + 1
+        nombre_docente = asig["docente"].nombre
+        aprovechamiento[nombre_docente] = aprovechamiento.get(nombre_docente, 0) + 1
+
+        if asig.get("docente_flexible", False):
+            docentes_flexibles_usados += 1
 
     return {
         "indice_consecutividad": pares_consecutivos,
         "pares_consecutivos": pares_consecutivos,
         "aprovechamiento_docente": aprovechamiento,
+        "docentes_flexibles_usados": docentes_flexibles_usados,
         "total_sesiones_asignadas": len(asignaciones)
     }

@@ -1,3 +1,4 @@
+
 # Programación de Horarios de Clase
 
 Sistema web académico para la **programación automática de horarios de clase**, desarrollado con **FastAPI, PostgreSQL, SQLAlchemy, HTML, CSS y JavaScript**.
@@ -24,6 +25,7 @@ El sistema permite registrar docentes, cursos, grupos, aulas, franjas horarias, 
 El sistema permite:
 
 - Iniciar sesión con usuario y contraseña.
+- Redirigir al usuario según su rol.
 - Proteger operaciones mediante JWT y roles.
 - Registrar docentes.
 - Registrar cursos.
@@ -31,16 +33,17 @@ El sistema permite:
 - Registrar aulas.
 - Registrar franjas horarias.
 - Configurar parámetros del semestre.
-- Registrar disponibilidad docente.
+- Registrar disponibilidad docente para profesores con restricción horaria.
 - Registrar elegibilidad docente-curso.
-- Cargar datos académicos iniciales.
+- Cargar datos académicos iniciales para pruebas.
 - Generar horarios automáticamente.
-- Validar restricciones duras y blandas.
+- Validar restricciones duras y restricciones blandas.
 - Registrar conflictos cuando un horario no es factible.
 - Consultar historial de horarios generados.
 - Publicar un horario como oficial.
 - Evitar eliminar horarios oficiales.
 - Exportar horarios en formato CSV.
+- Validar datos de entrada para evitar registros inválidos.
 
 ---
 
@@ -69,11 +72,24 @@ programacion-horarios-app/
 │   └── validador.py
 │
 ├── static/
-│   ├── app.js
-│   └── styles.css
+│   ├── css/
+│   │   └── styles.css
+│   │
+│   ├── js/
+│   │   ├── auth.js
+│   │   ├── login.js
+│   │   ├── admin.js
+│   │   ├── coordinador.js
+│   │   └── consulta.js
+│   │
+│   └── img/
+│       └── logo.png
 │
 └── templates/
-    └── index.html
+    ├── login.html
+    ├── admin.html
+    ├── coordinador.html
+    └── consulta.html
 ```
 
 ---

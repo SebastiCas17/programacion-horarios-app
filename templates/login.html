@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Login · Programación de Horarios</title>
+
+  <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
+
+<body class="login-body">
+  <main class="login-shell">
+    <section class="login-card">
+      <div class="login-logo-wrap">
+        <img
+          src="/static/img/logo.png"
+          alt="Logo del sistema académico"
+          class="login-logo"
+        />
+      </div>
+
+      <center><p class="eyebrow">Sistema Académico</p></center>
+
+      <center><h1>Programación de Horarios de Clase</h1></center>
+
+      <p class="subtitle">
+        Inicia sesión para acceder al panel correspondiente según tu rol.
+      </p>
+
+      <form
+        class="form-stack"
+        autocomplete="off"
+        onsubmit="event.preventDefault(); loginUsuario();"
+      >
+        <label for="login-correo">Correo institucional</label>
+        <input
+          id="login-correo"
+          name="correo_login_manual"
+          type="email"
+          placeholder="Ingrese su correo institucional"
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="off"
+          spellcheck="false"
+        />
+
+        <label for="login-password">Contraseña</label>
+        <input
+          id="login-password"
+          name="password_login_manual"
+          type="password"
+          placeholder="Ingrese su contraseña"
+          autocomplete="new-password"
+        />
+
+        <button class="btn-primary btn-full" type="submit">
+          Iniciar sesión
+        </button>
+      </form>
+
+      <div id="login-estado" class="summary-box">
+        Ingresa tus credenciales para continuar.
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/js/auth.js"></script>
+  <script src="/static/js/login.js"></script>
+</body>
+</html>

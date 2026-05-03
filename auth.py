@@ -34,6 +34,7 @@ def crear_token_acceso(data: dict, expires_delta: Optional[timedelta] = None):
     )
 
     datos.update({"exp": expire})
+
     return jwt.encode(datos, SECRET_KEY, algorithm=ALGORITHM)
 
 
@@ -49,16 +50,28 @@ def obtener_usuario_actual(
 
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        usuario_id: int = int(payload.get("sub"))
+        usuario_id = payload.get("sub")
+
         if usuario_id is None:
             raise credenciales_error
-    except JWTError:
+
+        usuario_id = int(usuario_id)
+
+    except (JWTError, ValueError, TypeError):
         raise credenciales_error
 
-    usuario = db.query(models.Usuario).filter(models.Usuario.id == usuario_id).first()
+    usuario = db.query(models.Usuario).filter(
+        models.Usuario.id == usuario_id
+    ).first()
 
     if usuario is None:
         raise credenciales_error
+
+    if not usuario.estado:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Usuario inactivo"
+        )
 
     return usuario
 
@@ -67,9 +80,10 @@ def exigir_roles(*roles_permitidos):
     def validador(usuario: models.Usuario = Depends(obtener_usuario_actual)):
         if usuario.rol not in roles_permitidos:
             raise HTTPException(
-                status_code=403,
+                status_code=status.HTTP_403_FORBIDDEN,
                 detail="No tienes permisos para realizar esta acción"
             )
+
         return usuario
 
     return validador
