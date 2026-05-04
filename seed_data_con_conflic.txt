@@ -1,21 +1,11 @@
 """
-seed_data_sin_conflictos.py
+seed_data_con_conflictos.py
 ============
 Carga de datos académicos iniciales para pruebas del sistema.
 
 Este archivo es idempotente:
 - Si el dato ya existe, no lo duplica.
 - Si no existe, lo crea.
-
-Cambios respecto a la versión anterior:
-- Se agregó LAB-03 (tercer laboratorio con computadores) para reducir conflictos
-  por falta de aulas en cursos que requieren computadores.
-- Se amplió la disponibilidad de Jorge Ramírez, Laura Gómez, Andrés Castillo
-  y Claudia Moreno, que eran los docentes con más conflictos NO_FACTIBLE.
-- Se agregó a Carlos Méndez como elegible para Seguridad Informática,
-  y a Andrés Castillo franjas entre semana para cubrir Química General.
-- Las disponibilidades ahora garantizan que cada docente tenga al menos
-  el doble de franjas disponibles que sesiones a dictar.
 """
 
 from sqlalchemy.orm import Session
@@ -213,7 +203,17 @@ def _get_or_create_disponibilidad(db: Session, docente_id: int, franja_id: int):
 
 def cargar_datos_academicos_iniciales(db: Session):
     """
-    Carga datos suficientes para probar el sistema completo sin conflictos.
+    Carga datos suficientes para probar:
+    - login
+    - docentes
+    - cursos
+    - grupos
+    - aulas
+    - franjas
+    - disponibilidad
+    - elegibilidad
+    - motor de backtracking
+    - generación de horario válido
     """
 
     creados = {
@@ -295,8 +295,10 @@ def cargar_datos_academicos_iniciales(db: Session):
     creados["docentes"] += int(nuevo)
 
     # -------------------------------------------------------------------------
-    # Cursos / Asignaturas (20) — sin cambios
+    # Cursos / Asignaturas (20)
     # -------------------------------------------------------------------------
+
+    # --- Matemáticas e Ingeniería ---
     calculo, nuevo = _get_or_create_curso(
         db, "Cálculo Diferencial", "MAT101", 4, 2
     )
@@ -317,6 +319,7 @@ def cargar_datos_academicos_iniciales(db: Session):
     )
     creados["cursos"] += int(nuevo)
 
+    # --- Sistemas e Informática ---
     programacion, nuevo = _get_or_create_curso(
         db, "Programación I", "SIS101", 3, 2, requiere_computadores=True
     )
@@ -357,6 +360,7 @@ def cargar_datos_academicos_iniciales(db: Session):
     )
     creados["cursos"] += int(nuevo)
 
+    # --- Ciencias Básicas ---
     fisica, nuevo = _get_or_create_curso(
         db, "Física General", "CIE101", 4, 2
     )
@@ -367,6 +371,7 @@ def cargar_datos_academicos_iniciales(db: Session):
     )
     creados["cursos"] += int(nuevo)
 
+    # --- Humanidades y Gestión ---
     etica, nuevo = _get_or_create_curso(
         db, "Ética Profesional", "HUM101", 2, 1
     )
@@ -398,7 +403,7 @@ def cargar_datos_academicos_iniciales(db: Session):
     creados["cursos"] += int(nuevo)
 
     # -------------------------------------------------------------------------
-    # Grupos — sin cambios
+    # Grupos (un grupo por asignatura)
     # -------------------------------------------------------------------------
     _, nuevo = _get_or_create_grupo(db, calculo,          "MAT101-01", 35, 30)
     creados["grupos"] += int(nuevo)
@@ -442,9 +447,7 @@ def cargar_datos_academicos_iniciales(db: Session):
     creados["grupos"] += int(nuevo)
 
     # -------------------------------------------------------------------------
-    # Aulas (6) — FIX: se agregó LAB-03 para reducir conflictos de laboratorio.
-    # Con solo 2 labs y 8 cursos que requieren computadores, el motor no tenía
-    # suficientes combinaciones aula-franja disponibles.
+    # Aulas (5)
     # -------------------------------------------------------------------------
     _, nuevo = _get_or_create_aula(db, "A-101", 40, "Bloque A")
     creados["aulas"] += int(nuevo)
@@ -462,19 +465,13 @@ def cargar_datos_academicos_iniciales(db: Session):
     )
     creados["aulas"] += int(nuevo)
 
-    # NUEVO: tercer laboratorio para absorber la demanda de cursos de sistemas
-    _, nuevo = _get_or_create_aula(
-        db, "LAB-03", 30, "Laboratorios", tiene_computadores=True
-    )
-    creados["aulas"] += int(nuevo)
-
     _, nuevo = _get_or_create_aula(
         db, "B-301", 38, "Bloque B", tiene_sillas_moviles=True
     )
     creados["aulas"] += int(nuevo)
 
     # -------------------------------------------------------------------------
-    # Franjas horarias — sin cambios
+    # Franjas horarias
     # -------------------------------------------------------------------------
     franjas_data = [
         ("Lunes",     "07:00", "09:00", False),
@@ -496,11 +493,10 @@ def cargar_datos_academicos_iniciales(db: Session):
         ("Viernes",   "07:00", "09:00", False),
         ("Viernes",   "09:00", "11:00", False),
         ("Viernes",   "14:00", "16:00", False),
-        ("Viernes",   "16:00", "18:00", False),
         ("Sabado",    "07:00", "09:00", False),
         ("Sabado",    "09:00", "11:00", False),
         ("Sabado",    "11:00", "13:00", False),
-        # Franjas de almuerzo bloqueadas
+        # Franja de almuerzo bloqueada
         ("Lunes",     "12:00", "13:00", True),
         ("Martes",    "12:00", "13:00", True),
         ("Miercoles", "12:00", "13:00", True),
@@ -517,30 +513,24 @@ def cargar_datos_academicos_iniciales(db: Session):
 
     # -------------------------------------------------------------------------
     # Elegibilidad docente → curso
-    # FIX: se añadió Carlos como elegible para Seguridad Informática,
-    # y Andrés Castillo para Física (ya tenía Química), para dar más opciones
-    # al motor cuando los docentes principales están saturados.
     # -------------------------------------------------------------------------
     elegibilidades_data = [
         # Ana Torres – Matemáticas
         (ana,      calculo),
         (ana,      calculo_integral),
         (ana,      algebra),
-        # Carlos Méndez – Sistemas
+        # Carlos Méndez – Sistemas (programación)
         (carlos,   programacion),
         (carlos,   programacion2),
         (carlos,   ingsoft),
-        (carlos,   seguridad),       # FIX: nuevo — descarga a Laura y Jorge
-        # Laura Gómez – Bases de datos, IA, Seguridad
+        # Laura Gómez – Bases de datos e IA
         (laura,    bases),
         (laura,    ia),
         (laura,    seguridad),
-        (laura,    so),              # FIX: nuevo — puede cubrir SO si Jorge está ocupado
-        # Jorge Ramírez – Redes, SO, Seguridad
+        # Jorge Ramírez – Redes y SO
         (jorge,    redes),
         (jorge,    so),
         (jorge,    seguridad),
-        (jorge,    ingsoft),         # FIX: nuevo — puede cubrir IS si Claudia/Carlos están ocupados
         # Sofía Herrera – Estadística y Física
         (sofia,    estadistica),
         (sofia,    fisica),
@@ -555,7 +545,7 @@ def cargar_datos_academicos_iniciales(db: Session):
         (david,    gestion),
         (david,    emprendimiento),
         (david,    legislacion),
-        # Claudia Moreno – Ingeniería de Software, Gestión, Álgebra
+        # Claudia Moreno – Ingeniería de Software y Gestión
         (claudia,  ingsoft),
         (claudia,  gestion),
         (claudia,  algebra),
@@ -571,109 +561,63 @@ def cargar_datos_academicos_iniciales(db: Session):
 
     # -------------------------------------------------------------------------
     # Disponibilidad docente → franja
-    #
-    # FIX general: cada docente ahora tiene al menos el doble de franjas
-    # disponibles que sesiones debe dictar, para que el backtracking tenga
-    # suficiente espacio de búsqueda sin agotar combinaciones.
-    #
-    # Cambios específicos:
-    # - Jorge Ramírez: +3 franjas (Lunes, Miercoles, Viernes mañana)
-    # - Laura Gómez: +3 franjas (Martes tarde, Jueves mañana y tarde)
-    # - Andrés Castillo: +4 franjas entre semana (antes solo tenía sábados)
-    # - Claudia Moreno: +2 franjas (Martes y Jueves mañana)
-    # - David Vargas: +2 franjas (Lunes y Miercoles tarde)
+    # Cada docente TC tiene disponibilidad amplia; MT moderada; HO reducida.
     # -------------------------------------------------------------------------
     disponibilidad_data = [
-        # Ana Torres (TC) – amplia disponibilidad L/M/Mi/J/V
+        # Ana Torres (TC) – L/M/Mi/J mañana y tarde
         (ana,     ("Lunes",     "07:00", "09:00")),
         (ana,     ("Lunes",     "09:00", "11:00")),
-        (ana,     ("Martes",    "07:00", "09:00")),
-        (ana,     ("Martes",    "09:00", "11:00")),
         (ana,     ("Miercoles", "07:00", "09:00")),
         (ana,     ("Miercoles", "09:00", "11:00")),
-        (ana,     ("Jueves",    "07:00", "09:00")),
         (ana,     ("Viernes",   "07:00", "09:00")),
-        (ana,     ("Viernes",   "09:00", "11:00")),
-
-        # Carlos Méndez (MT) – M/J/V mañana
+        # Carlos Méndez (MT) – M/J mañana y tarde
         (carlos,  ("Martes",    "07:00", "09:00")),
         (carlos,  ("Martes",    "09:00", "11:00")),
         (carlos,  ("Jueves",    "07:00", "09:00")),
         (carlos,  ("Jueves",    "09:00", "11:00")),
-        (carlos,  ("Viernes",   "07:00", "09:00")),
         (carlos,  ("Viernes",   "09:00", "11:00")),
-
-        # Laura Gómez (TC) – FIX: ampliada con Martes tarde y Jueves
+        # Laura Gómez (TC) – L/Mi/V mañana y tarde
         (laura,   ("Lunes",     "14:00", "16:00")),
         (laura,   ("Martes",    "09:00", "11:00")),
-        (laura,   ("Martes",    "14:00", "16:00")),   # FIX: nuevo
         (laura,   ("Miercoles", "09:00", "11:00")),
-        (laura,   ("Miercoles", "14:00", "16:00")),   # FIX: nuevo
-        (laura,   ("Jueves",    "09:00", "11:00")),   # FIX: nuevo
         (laura,   ("Viernes",   "07:00", "09:00")),
         (laura,   ("Viernes",   "09:00", "11:00")),
-
-        # Jorge Ramírez (TC) – FIX: ampliada con Lunes, Miercoles y más Viernes
-        (jorge,   ("Lunes",     "07:00", "09:00")),   # FIX: nuevo
-        (jorge,   ("Lunes",     "09:00", "11:00")),   # FIX: nuevo
+        # Jorge Ramírez (TC) – M/J/V mañana y tarde
         (jorge,   ("Martes",    "07:00", "09:00")),
-        (jorge,   ("Miercoles", "07:00", "09:00")),   # FIX: nuevo
         (jorge,   ("Jueves",    "07:00", "09:00")),
         (jorge,   ("Jueves",    "14:00", "16:00")),
-        (jorge,   ("Viernes",   "07:00", "09:00")),   # FIX: nuevo
         (jorge,   ("Viernes",   "14:00", "16:00")),
         (jorge,   ("Sabado",    "07:00", "09:00")),
-
         # Sofía Herrera (MT) – L/Mi tarde
         (sofia,   ("Lunes",     "14:00", "16:00")),
         (sofia,   ("Lunes",     "16:00", "18:00")),
         (sofia,   ("Miercoles", "14:00", "16:00")),
         (sofia,   ("Miercoles", "16:00", "18:00")),
-        (sofia,   ("Viernes",   "14:00", "16:00")),   # FIX: nuevo
-
-        # Andrés Castillo (TC) – FIX: antes solo sábados, ahora tiene entre semana
-        # Química necesita 2 sesiones; con solo 3 franjas de sábado no alcanzaba
-        (andres,  ("Lunes",     "14:00", "16:00")),   # FIX: nuevo
-        (andres,  ("Miercoles", "14:00", "16:00")),   # FIX: nuevo
-        (andres,  ("Jueves",    "14:00", "16:00")),   # FIX: nuevo
-        (andres,  ("Viernes",   "14:00", "16:00")),   # FIX: nuevo
+        # Andrés Castillo (HO) – Sábado
         (andres,  ("Sabado",    "07:00", "09:00")),
         (andres,  ("Sabado",    "09:00", "11:00")),
         (andres,  ("Sabado",    "11:00", "13:00")),
-
         # María Rodríguez (TC) – L/M/Mi/J/V
         (maria,   ("Lunes",     "07:00", "09:00")),
-        (maria,   ("Lunes",     "09:00", "11:00")),   # FIX: nuevo
-        (maria,   ("Martes",    "07:00", "09:00")),   # FIX: nuevo
         (maria,   ("Martes",    "14:00", "16:00")),
         (maria,   ("Miercoles", "07:00", "09:00")),
         (maria,   ("Jueves",    "09:00", "11:00")),
         (maria,   ("Viernes",   "07:00", "09:00")),
-
-        # David Vargas (TC) – FIX: ampliada con Lunes y Miercoles tarde
-        (david,   ("Lunes",     "16:00", "18:00")),   # FIX: nuevo
+        # David Vargas (HO) – M/J tarde
         (david,   ("Martes",    "16:00", "18:00")),
-        (david,   ("Miercoles", "16:00", "18:00")),   # FIX: nuevo
         (david,   ("Jueves",    "16:00", "18:00")),
         (david,   ("Viernes",   "14:00", "16:00")),
-        (david,   ("Viernes",   "16:00", "18:00")),   # FIX: nuevo
-
-        # Claudia Moreno (TC) – FIX: ampliada con Martes y Jueves mañana
+        # Claudia Moreno (TC) – L/Mi/J mañana y tarde
         (claudia, ("Lunes",     "09:00", "11:00")),
         (claudia, ("Lunes",     "16:00", "18:00")),
-        (claudia, ("Martes",    "09:00", "11:00")),   # FIX: nuevo
         (claudia, ("Miercoles", "16:00", "18:00")),
-        (claudia, ("Jueves",    "09:00", "11:00")),   # FIX: nuevo
         (claudia, ("Jueves",    "14:00", "16:00")),
         (claudia, ("Viernes",   "09:00", "11:00")),
-
         # Felipe Suárez (MT) – M/J/Sab mañana
         (felipe,  ("Martes",    "07:00", "09:00")),
         (felipe,  ("Martes",    "09:00", "11:00")),
         (felipe,  ("Jueves",    "07:00", "09:00")),
-        (felipe,  ("Jueves",    "09:00", "11:00")),   # FIX: nuevo
         (felipe,  ("Sabado",    "09:00", "11:00")),
-        (felipe,  ("Sabado",    "11:00", "13:00")),   # FIX: nuevo
     ]
 
     for docente, franja_key in disponibilidad_data:
