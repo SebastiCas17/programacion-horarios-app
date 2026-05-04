@@ -32,7 +32,6 @@
       <div class="sidebar-title">Administración</div>
 
       <a href="#usuarios">Usuarios</a>
-      
       <a href="#historial-horarios">Historial</a>
       <a href="/coordinador">Ir al panel coordinador</a>
     </aside>
@@ -45,8 +44,8 @@
         </div>
 
         <div class="form-grid">
-          <input id="usuario-nombre" placeholder="Nombre completo" />
-          <input id="usuario-correo" placeholder="Correo" />
+          <input id="usuario-nombre" placeholder="Nombre completo" maxlength="100" autocomplete="off" />
+          <input id="usuario-correo" type="email" placeholder="Correo" maxlength="120" autocomplete="off" />
           <input id="usuario-password" type="password" placeholder="Contraseña" autocomplete="new-password" />
 
           <select id="usuario-rol">
@@ -73,6 +72,7 @@
                 <th>Correo</th>
                 <th>Rol</th>
                 <th>Estado</th>
+                <th>Acción</th>
               </tr>
             </thead>
             <tbody id="tabla-usuarios"></tbody>

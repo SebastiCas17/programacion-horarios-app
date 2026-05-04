@@ -32,14 +32,12 @@ from seed_data import cargar_datos_academicos_iniciales
 # ==============================================================================
 # INICIALIZACIÓN DE BASE DE DATOS
 # ==============================================================================
-
 models.Base.metadata.create_all(bind=engine)
 
 
 # ==============================================================================
 # APLICACIÓN FASTAPI
 # ==============================================================================
-
 app = FastAPI(
     title="Programación de Horarios de Clase",
     description="Motor de generación de horarios académicos con backtracking — Universidad El Bosque",
@@ -54,11 +52,6 @@ executor = ThreadPoolExecutor(max_workers=2)
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """
-    Convierte errores de validación Pydantic en mensajes legibles para el frontend.
-    Así el usuario no ve errores técnicos ni estructuras difíciles de leer.
-    """
-
     mensajes = []
 
     for error in exc.errors():
@@ -84,16 +77,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 # ==============================================================================
 # USUARIOS INICIALES DEL SISTEMA
 # ==============================================================================
-
 def crear_usuarios_iniciales():
-    """
-    Crea automáticamente los usuarios iniciales del sistema si no existen.
-    Roles disponibles:
-    - Administrador
-    - Coordinador
-    - Consulta
-    """
-
     db = next(get_db())
 
     try:
@@ -151,17 +135,12 @@ def crear_usuarios_iniciales():
 
 @app.on_event("startup")
 def startup_event():
-    """
-    Evento de arranque de FastAPI.
-    Garantiza que existan los usuarios iniciales del sistema.
-    """
     crear_usuarios_iniciales()
 
 
 # ==============================================================================
-# RUTAS PRINCIPALES — INTERFAZ WEB POR ROL
+# RUTAS PRINCIPALES
 # ==============================================================================
-
 @app.get("/")
 def root():
     return RedirectResponse(url="/login")
@@ -190,7 +169,6 @@ def consulta_view(request: Request):
 # ==============================================================================
 # AUTENTICACIÓN Y USUARIOS
 # ==============================================================================
-
 @app.post("/api/auth/login", response_model=schemas.TokenOut, tags=["Autenticación"])
 def login(datos: schemas.LoginRequest, db: Session = Depends(get_db)):
     usuario = crud.get_usuario_por_correo(db, datos.correo)
@@ -215,29 +193,73 @@ def login(datos: schemas.LoginRequest, db: Session = Depends(get_db)):
 
 @app.post("/api/usuarios", response_model=schemas.UsuarioOut, tags=["Usuarios"])
 def crear_usuario(
-    usuario: schemas.UsuarioCreate,
-    db: Session = Depends(get_db)
+    datos_usuario: schemas.UsuarioCreate,
+    db: Session = Depends(get_db),
+    usuario_actual=Depends(exigir_roles("Administrador"))
 ):
-    existente = crud.get_usuario_por_correo(db, usuario.correo)
+    existente = crud.get_usuario_por_correo(db, datos_usuario.correo)
 
     if existente:
         raise HTTPException(status_code=400, detail="El correo ya está registrado")
 
-    return crud.create_usuario(db, usuario)
+    return crud.create_usuario(db, datos_usuario)
 
 
 @app.get("/api/usuarios", response_model=list[schemas.UsuarioOut], tags=["Usuarios"])
 def listar_usuarios(
     db: Session = Depends(get_db),
-    usuario=Depends(exigir_roles("Administrador"))
+    usuario_actual=Depends(exigir_roles("Administrador"))
 ):
     return crud.get_usuarios(db)
+
+
+@app.delete("/api/usuarios/{usuario_id}", tags=["Usuarios"])
+def eliminar_usuario(
+    usuario_id: int,
+    db: Session = Depends(get_db),
+    usuario_actual=Depends(exigir_roles("Administrador"))
+):
+    usuario_objetivo = crud.get_usuario(db, usuario_id)
+
+    if not usuario_objetivo:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    if usuario_objetivo.id == usuario_actual.id:
+        raise HTTPException(
+            status_code=400,
+            detail="No puedes eliminar tu propio usuario mientras tienes la sesión activa."
+        )
+
+    if not usuario_objetivo.estado:
+        raise HTTPException(
+            status_code=400,
+            detail="El usuario ya se encuentra inactivo."
+        )
+
+    if usuario_objetivo.rol == "Administrador":
+        total_admins_activos = crud.contar_administradores_activos(db)
+
+        if total_admins_activos <= 1:
+            raise HTTPException(
+                status_code=400,
+                detail="No se puede eliminar el último administrador activo del sistema."
+            )
+
+    resultado = crud.delete_usuario(db, usuario_id)
+
+    if not resultado:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    return {
+        "mensaje": "Usuario eliminado correctamente",
+        "usuario_id": usuario_id,
+        "estado": resultado.estado
+    }
 
 
 # ==============================================================================
 # PARÁMETROS DE SEMESTRE
 # ==============================================================================
-
 @app.get(
     "/api/parametros-semestre/activo",
     response_model=schemas.ParametroSemestreOut,
@@ -275,7 +297,6 @@ def crear_parametro_semestre(
 # ==============================================================================
 # DOCENTES
 # ==============================================================================
-
 @app.get("/api/docentes", response_model=List[schemas.DocenteOut], tags=["Docentes"])
 def listar_docentes(db: Session = Depends(get_db)):
     return crud.get_docentes(db)
@@ -307,7 +328,6 @@ def eliminar_docente(
 # ==============================================================================
 # CURSOS
 # ==============================================================================
-
 @app.get("/api/cursos", response_model=List[schemas.CursoOut], tags=["Cursos"])
 def listar_cursos(db: Session = Depends(get_db)):
     return crud.get_cursos(db)
@@ -339,7 +359,6 @@ def eliminar_curso(
 # ==============================================================================
 # GRUPOS
 # ==============================================================================
-
 @app.get("/api/grupos", response_model=List[schemas.GrupoOut], tags=["Grupos"])
 def listar_grupos(db: Session = Depends(get_db)):
     return crud.get_grupos(db)
@@ -382,7 +401,6 @@ def eliminar_grupo(
 # ==============================================================================
 # AULAS
 # ==============================================================================
-
 @app.get("/api/aulas", response_model=List[schemas.AulaOut], tags=["Aulas"])
 def listar_aulas(db: Session = Depends(get_db)):
     return crud.get_aulas(db)
@@ -414,7 +432,6 @@ def eliminar_aula(
 # ==============================================================================
 # FRANJAS HORARIAS
 # ==============================================================================
-
 @app.get("/api/franjas", response_model=List[schemas.FranjaOut], tags=["Franjas"])
 def listar_franjas(db: Session = Depends(get_db)):
     return crud.get_franjas(db)
@@ -446,7 +463,6 @@ def eliminar_franja(
 # ==============================================================================
 # DISPONIBILIDAD DOCENTE
 # ==============================================================================
-
 @app.get("/api/disponibilidad", response_model=List[schemas.DisponibilidadOut], tags=["Disponibilidad"])
 def listar_disponibilidades(db: Session = Depends(get_db)):
     return crud.get_disponibilidades(db)
@@ -478,7 +494,6 @@ def eliminar_disponibilidad(
 # ==============================================================================
 # ELEGIBILIDAD DOCENTE-CURSO
 # ==============================================================================
-
 @app.get("/api/elegibilidad", response_model=List[schemas.ElegibilidadOut], tags=["Elegibilidad"])
 def listar_elegibilidades(db: Session = Depends(get_db)):
     return crud.get_elegibilidades(db)
@@ -510,49 +525,42 @@ def eliminar_elegibilidad(
 # ==============================================================================
 # MOTOR DE HORARIOS
 # ==============================================================================
-
 @app.post("/api/generar-horario", tags=["Motor"])
 async def generar_horario(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
-    # 1. Preparar sesiones y cargar datos con eager loading
     crud.preparar_sesiones_para_motor(db)
     datos = crud.get_todos_los_datos(db)
 
-    # 2. Validaciones previas
     if not datos["grupos"]:
         raise HTTPException(
             status_code=400,
             detail="No hay grupos registrados. Registra cursos y grupos antes de generar el horario."
         )
+
     if not datos["aulas"]:
         raise HTTPException(status_code=400, detail="No hay aulas registradas.")
+
     if not datos["franjas"]:
         raise HTTPException(status_code=400, detail="No hay franjas horarias registradas.")
+
     if not datos.get("sesiones"):
         raise HTTPException(
             status_code=400,
             detail="No hay sesiones reales generadas para programar."
         )
 
-    # 3. CRÍTICO: desvincula todos los objetos SQLAlchemy de la sesión DB
-    #    antes de pasarlos al ThreadPoolExecutor.
-    #    Sin esto, el motor intenta acceder a relaciones lazy en otro thread,
-    #    lo que provoca DetachedInstanceError → HTTP 500.
-    #    Con joinedload en get_todos_los_datos + expunge_all aquí, los datos
-    #    son objetos Python puros en memoria, seguros para cualquier thread.
     db.expunge_all()
 
-    # 4. Crear el registro del horario (después del expunge para que no se pierda)
     horario_db = crud.create_horario(db)
 
-    # 5. Ejecutar el motor en un thread separado para no bloquear el event loop
     def ejecutar_motor():
         motor = GeneradorHorarios(datos)
         return motor.generar()
 
     loop = asyncio.get_event_loop()
+
     try:
         resultado = await asyncio.wait_for(
             loop.run_in_executor(executor, ejecutar_motor),
@@ -562,6 +570,7 @@ async def generar_horario(
         horario_db.estado = "No_Factible"
         horario_db.puntaje_total = 0.0
         db.commit()
+
         raise HTTPException(
             status_code=408,
             detail="El motor tardó demasiado (60s). Revisa disponibilidades y franjas horarias."
@@ -569,9 +578,9 @@ async def generar_horario(
 
     puntaje_total = resultado.get("puntaje_total", 0.0)
 
-    # 6. Persistir asignaciones
     for asig in resultado.get("asignaciones", []):
         sesion = asig["sesion"]
+
         asignacion_db = models.Asignacion(
             id_sesion=sesion.id,
             id_docente=asig["docente"].id,
@@ -581,23 +590,28 @@ async def generar_horario(
             estado="Valida",
             puntaje_penalizacion=asig.get("penalizacion", 0.0)
         )
+
         db.add(asignacion_db)
 
-        # Actualizar estado de la sesión directamente por ID para evitar
-        # operar sobre el objeto detached
         db.query(models.SesionClase).filter(
             models.SesionClase.id == sesion.id
-        ).update({"estado": "Asignada"}, synchronize_session=False)
+        ).update(
+            {"estado": "Asignada"},
+            synchronize_session=False
+        )
 
-    # 7. Persistir conflictos (deduplicados)
     conflictos_vistos = set()
+
     for conf in resultado.get("conflictos", []):
         clave = (conf.get("id_restriccion"), conf.get("id_sesion"))
+
         if clave in conflictos_vistos:
             continue
+
         conflictos_vistos.add(clave)
 
         id_sesion = conf.get("id_sesion")
+
         conflicto_db = models.Conflicto(
             id_horario=horario_db.id,
             id_sesion=id_sesion,
@@ -606,14 +620,17 @@ async def generar_horario(
             entidad_tipo=conf.get("entidad_tipo", "Sistema"),
             entidad_id=conf.get("entidad_id", 0)
         )
+
         db.add(conflicto_db)
 
         if id_sesion:
             db.query(models.SesionClase).filter(
                 models.SesionClase.id == id_sesion
-            ).update({"estado": "Conflicto"}, synchronize_session=False)
+            ).update(
+                {"estado": "Conflicto"},
+                synchronize_session=False
+            )
 
-    # 8. Actualizar estado final del horario
     estado_final = "Valido" if resultado["exito"] else "No_Factible"
     horario_db.estado = estado_final
     horario_db.puntaje_total = puntaje_total
@@ -621,7 +638,6 @@ async def generar_horario(
     db.commit()
     db.refresh(horario_db)
 
-    # 9. Construir respuesta
     asignaciones_out = _construir_asignaciones_out(
         resultado.get("asignaciones", []),
         horario_db.id
@@ -646,6 +662,7 @@ async def generar_horario(
 
 def _construir_asignaciones_out(asignaciones: list, horario_id: int) -> list:
     resultado = []
+
     for asig in asignaciones:
         resultado.append({
             "horario_id": horario_id,
@@ -660,13 +677,13 @@ def _construir_asignaciones_out(asignaciones: list, horario_id: int) -> list:
             "grupo_nombre": asig["grupo"].nombre_grupo,
             "penalizacion": asig.get("penalizacion", 0.0)
         })
+
     return resultado
 
 
 # ==============================================================================
 # HORARIOS GENERADOS, PUBLICACIÓN OFICIAL Y EXPORTACIÓN
 # ==============================================================================
-
 @app.get("/api/horarios", tags=["Horarios"])
 def listar_horarios(db: Session = Depends(get_db)):
     horarios = crud.get_horarios(db)
@@ -867,7 +884,6 @@ def exportar_horario_csv(
 # ==============================================================================
 # SEED ACADÉMICO Y DATOS DE EJEMPLO
 # ==============================================================================
-
 @app.post("/api/seed/datos-academicos", tags=["Seed"])
 def cargar_seed_academico(
     db: Session = Depends(get_db),

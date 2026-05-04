@@ -34,11 +34,7 @@ def create_docente(db: Session, docente: schemas.DocenteCreate):
 def delete_docente(db: Session, docente_id: int):
     """
     Desactiva un docente sin borrarlo físicamente.
-
-    Motivo:
-    - El docente puede estar relacionado con horarios, asignaciones o historial.
-    - get_docentes() ya filtra por estado == True.
-    - Al poner estado=False, deja de aparecer en la interfaz y no rompe relaciones históricas.
+    También elimina sus disponibilidades y desactiva sus elegibilidades.
     """
 
     db_docente = db.query(models.Docente).filter(
@@ -48,12 +44,10 @@ def delete_docente(db: Session, docente_id: int):
     if db_docente:
         db_docente.estado = False
 
-        # Eliminar disponibilidades actuales del docente
         db.query(models.DisponibilidadDocente).filter(
             models.DisponibilidadDocente.id_docente == docente_id
         ).delete(synchronize_session=False)
 
-        # Desactivar elegibilidades actuales del docente
         db.query(models.ElegibilidadDocente).filter(
             models.ElegibilidadDocente.id_docente == docente_id
         ).update(
@@ -79,6 +73,28 @@ def get_curso(db: Session, curso_id: int):
 
 
 def create_curso(db: Session, curso: schemas.CursoCreate):
+    """
+    Crea un curso.
+    Si ya existe un curso con el mismo código, lo actualiza y reactiva.
+    """
+
+    existente = db.query(models.Curso).filter(
+        models.Curso.codigo == curso.codigo
+    ).first()
+
+    if existente:
+        existente.nombre = curso.nombre
+        existente.creditos = curso.creditos
+        existente.sesiones_semana = curso.sesiones_semana
+        existente.duracion_sesion_h = curso.duracion_sesion_h
+        existente.requiere_computadores = curso.requiere_computadores
+        existente.requiere_sillas_moviles = curso.requiere_sillas_moviles
+        existente.estado = True
+
+        db.commit()
+        db.refresh(existente)
+        return existente
+
     db_curso = models.Curso(**curso.model_dump())
     db.add(db_curso)
     db.commit()
@@ -87,11 +103,41 @@ def create_curso(db: Session, curso: schemas.CursoCreate):
 
 
 def delete_curso(db: Session, curso_id: int):
-    db_curso = db.query(models.Curso).filter(models.Curso.id == curso_id).first()
+    """
+    Desactiva un curso sin borrarlo físicamente.
+    Evita errores si el curso tiene grupos, sesiones o asignaciones asociadas.
+    """
+
+    db_curso = db.query(models.Curso).filter(
+        models.Curso.id == curso_id
+    ).first()
 
     if db_curso:
-        db.delete(db_curso)
+        db_curso.estado = False
+
+        db.query(models.ElegibilidadDocente).filter(
+            models.ElegibilidadDocente.id_curso == curso_id
+        ).update(
+            {"activo": False},
+            synchronize_session=False
+        )
+
+        grupos_asociados = db.query(models.Grupo).filter(
+            models.Grupo.id_curso == curso_id
+        ).all()
+
+        for grupo in grupos_asociados:
+            grupo.estado = "Cerrado"
+
+            db.query(models.SesionClase).filter(
+                models.SesionClase.id_grupo == grupo.id
+            ).update(
+                {"estado": "Conflicto"},
+                synchronize_session=False
+            )
+
         db.commit()
+        db.refresh(db_curso)
 
     return db_curso
 
@@ -100,7 +146,9 @@ def delete_curso(db: Session, curso_id: int):
 # CRUD: Grupo
 # ==============================================================================
 def get_grupos(db: Session):
-    return db.query(models.Grupo).all()
+    return db.query(models.Grupo).filter(
+        models.Grupo.estado != "Cerrado"
+    ).all()
 
 
 def get_grupo(db: Session, grupo_id: int):
@@ -116,11 +164,26 @@ def create_grupo(db: Session, grupo: schemas.GrupoCreate):
 
 
 def delete_grupo(db: Session, grupo_id: int):
-    db_grupo = db.query(models.Grupo).filter(models.Grupo.id == grupo_id).first()
+    """
+    Cierra un grupo sin borrarlo físicamente.
+    """
+
+    db_grupo = db.query(models.Grupo).filter(
+        models.Grupo.id == grupo_id
+    ).first()
 
     if db_grupo:
-        db.delete(db_grupo)
+        db_grupo.estado = "Cerrado"
+
+        db.query(models.SesionClase).filter(
+            models.SesionClase.id_grupo == grupo_id
+        ).update(
+            {"estado": "Conflicto"},
+            synchronize_session=False
+        )
+
         db.commit()
+        db.refresh(db_grupo)
 
     return db_grupo
 
@@ -145,11 +208,18 @@ def create_aula(db: Session, aula: schemas.AulaCreate):
 
 
 def delete_aula(db: Session, aula_id: int):
-    db_aula = db.query(models.Aula).filter(models.Aula.id == aula_id).first()
+    """
+    Desactiva un aula sin borrarla físicamente.
+    """
+
+    db_aula = db.query(models.Aula).filter(
+        models.Aula.id == aula_id
+    ).first()
 
     if db_aula:
-        db.delete(db_aula)
+        db_aula.estado = False
         db.commit()
+        db.refresh(db_aula)
 
     return db_aula
 
@@ -162,7 +232,9 @@ def get_franjas(db: Session):
 
 
 def get_franja(db: Session, franja_id: int):
-    return db.query(models.FranjaHoraria).filter(models.FranjaHoraria.id == franja_id).first()
+    return db.query(models.FranjaHoraria).filter(
+        models.FranjaHoraria.id == franja_id
+    ).first()
 
 
 def create_franja(db: Session, franja: schemas.FranjaCreate):
@@ -174,7 +246,9 @@ def create_franja(db: Session, franja: schemas.FranjaCreate):
 
 
 def delete_franja(db: Session, franja_id: int):
-    db_franja = db.query(models.FranjaHoraria).filter(models.FranjaHoraria.id == franja_id).first()
+    db_franja = db.query(models.FranjaHoraria).filter(
+        models.FranjaHoraria.id == franja_id
+    ).first()
 
     if db_franja:
         db.delete(db_franja)
@@ -191,18 +265,12 @@ def get_disponibilidades(db: Session):
 
 
 def get_disponibilidades_docente(db: Session, docente_id: int):
-    """Retorna las franjas disponibles para un docente específico."""
     return db.query(models.DisponibilidadDocente).filter(
         models.DisponibilidadDocente.id_docente == docente_id
     ).all()
 
 
 def create_disponibilidad(db: Session, disp: schemas.DisponibilidadCreate):
-    """
-    Crea disponibilidad docente.
-    Si ya existe la misma relación docente-franja, retorna la existente.
-    """
-
     existente = db.query(models.DisponibilidadDocente).filter(
         and_(
             models.DisponibilidadDocente.id_docente == disp.id_docente,
@@ -242,11 +310,6 @@ def get_elegibilidades(db: Session):
 
 
 def create_elegibilidad(db: Session, eleg: schemas.ElegibilidadCreate):
-    """
-    Crea una elegibilidad docente-curso.
-    Si ya existe y estaba inactiva, la reactiva.
-    """
-
     existente = db.query(models.ElegibilidadDocente).filter(
         and_(
             models.ElegibilidadDocente.id_docente == eleg.id_docente,
@@ -268,14 +331,6 @@ def create_elegibilidad(db: Session, eleg: schemas.ElegibilidadCreate):
 
 
 def delete_elegibilidad(db: Session, eleg_id: int):
-    """
-    Desactiva una elegibilidad docente-curso sin borrarla físicamente.
-
-    Motivo:
-    - get_elegibilidades() solo muestra registros con activo == True.
-    - create_elegibilidad() puede reactivar la relación si se vuelve a crear.
-    """
-
     db_eleg = db.query(models.ElegibilidadDocente).filter(
         models.ElegibilidadDocente.id == eleg_id
     ).first()
@@ -292,11 +347,6 @@ def delete_elegibilidad(db: Session, eleg_id: int):
 # CRUD: SesionClase
 # ==============================================================================
 def create_sesiones_para_grupo(db: Session, grupo_id: int, num_sesiones: int):
-    """
-    Crea automáticamente las sesiones de clase para un grupo.
-    Se llama antes de ejecutar el motor de horarios.
-    """
-
     db.query(models.SesionClase).filter(
         models.SesionClase.id_grupo == grupo_id
     ).delete()
@@ -317,19 +367,13 @@ def create_sesiones_para_grupo(db: Session, grupo_id: int, num_sesiones: int):
 
     db.commit()
 
-    for s in sesiones:
-        db.refresh(s)
+    for sesion in sesiones:
+        db.refresh(sesion)
 
     return sesiones
 
 
 def preparar_sesiones_para_motor(db: Session):
-    """
-    Crea o actualiza las sesiones reales que el motor debe programar.
-    Cada grupo activo genera tantas sesiones como indique el curso.
-    No borra sesiones históricas para evitar romper asignaciones ya guardadas.
-    """
-
     grupos = db.query(models.Grupo).all()
     cursos_por_id = {c.id: c for c in db.query(models.Curso).all()}
 
@@ -375,12 +419,6 @@ def preparar_sesiones_para_motor(db: Session):
 
 
 def get_sesiones_motor(db: Session):
-    """
-    Retorna las sesiones reales que pueden ser usadas por el motor,
-    con sus relaciones grupo y curso ya cargadas en memoria (eager load)
-    para evitar DetachedInstanceError en el executor.
-    """
-
     return (
         db.query(models.SesionClase)
         .join(models.Grupo, models.SesionClase.id_grupo == models.Grupo.id)
@@ -397,10 +435,6 @@ def get_sesiones_motor(db: Session):
 
 
 def actualizar_estado_sesion(db: Session, sesion_id: int, estado: str):
-    """
-    Cambia el estado de una sesión: Pendiente / Asignada / Conflicto.
-    """
-
     sesion = db.query(models.SesionClase).filter(
         models.SesionClase.id == sesion_id
     ).first()
@@ -417,15 +451,12 @@ def actualizar_estado_sesion(db: Session, sesion_id: int, estado: str):
 # CRUD: Horario
 # ==============================================================================
 def get_horarios(db: Session):
-    return db.query(models.Horario).order_by(models.Horario.fecha_generacion.desc()).all()
+    return db.query(models.Horario).order_by(
+        models.Horario.fecha_generacion.desc()
+    ).all()
 
 
 def get_horario(db: Session, horario_id: int):
-    """
-    Carga el horario con TODAS sus relaciones usando eager loading.
-    Esto evita lazy load errors al acceder a relaciones fuera del contexto
-    de la sesión SQLAlchemy (ej: en templates, serialización, etc.).
-    """
     return (
         db.query(models.Horario)
         .options(
@@ -447,14 +478,12 @@ def get_horario(db: Session, horario_id: int):
 
 
 def get_ultimo_horario(db: Session):
-    """Retorna el horario más reciente generado."""
     return db.query(models.Horario).order_by(
         models.Horario.fecha_generacion.desc()
     ).first()
 
 
 def create_horario(db: Session):
-    """Crea un nuevo registro de horario en estado Borrador."""
     horario = models.Horario(estado="Borrador", puntaje_total=0.0)
     db.add(horario)
     db.commit()
@@ -463,7 +492,9 @@ def create_horario(db: Session):
 
 
 def update_horario_estado(db: Session, horario_id: int, estado: str, puntaje: float = 0.0):
-    horario = db.query(models.Horario).filter(models.Horario.id == horario_id).first()
+    horario = db.query(models.Horario).filter(
+        models.Horario.id == horario_id
+    ).first()
 
     if horario:
         horario.estado = estado
@@ -475,8 +506,9 @@ def update_horario_estado(db: Session, horario_id: int, estado: str, puntaje: fl
 
 
 def publicar_horario(db: Session, horario_id: int):
-    """Marca el horario como oficial e inmutable (RH-14)."""
-    horario = db.query(models.Horario).filter(models.Horario.id == horario_id).first()
+    horario = db.query(models.Horario).filter(
+        models.Horario.id == horario_id
+    ).first()
 
     if horario and horario.estado == "Valido":
         horario.es_oficial = True
@@ -488,8 +520,9 @@ def publicar_horario(db: Session, horario_id: int):
 
 
 def delete_horario(db: Session, horario_id: int):
-    """Elimina un horario solo si no es oficial."""
-    horario = db.query(models.Horario).filter(models.Horario.id == horario_id).first()
+    horario = db.query(models.Horario).filter(
+        models.Horario.id == horario_id
+    ).first()
 
     if horario and not horario.es_oficial:
         db.delete(horario)
@@ -502,19 +535,6 @@ def delete_horario(db: Session, horario_id: int):
 # CONSULTAS para el Motor de Horarios
 # ==============================================================================
 def get_todos_los_datos(db: Session):
-    """
-    Carga todos los datos necesarios para el motor de horarios en memoria.
-
-    IMPORTANTE: usa joinedload en todas las relaciones que el motor necesita
-    acceder. Esto es crítico porque el motor se ejecuta en un ThreadPoolExecutor
-    separado, y SQLAlchemy no permite acceso lazy a relaciones fuera del thread
-    original de la sesión (DetachedInstanceError).
-
-    Al cargar todo con eager loading aquí, los datos son simples objetos Python
-    en memoria y pueden usarse sin problemas en cualquier thread.
-    """
-
-    # Docentes con disponibilidades y elegibilidades precargadas
     docentes = (
         db.query(models.Docente)
         .options(
@@ -525,14 +545,12 @@ def get_todos_los_datos(db: Session):
         .all()
     )
 
-    # Grupos con su curso precargado
     grupos = (
         db.query(models.Grupo)
         .options(joinedload(models.Grupo.curso))
         .all()
     )
 
-    # Sesiones con grupo y curso precargados
     sesiones = get_sesiones_motor(db)
 
     return {
@@ -549,13 +567,21 @@ def get_todos_los_datos(db: Session):
 
 
 # ==============================================================================
-# CRUD: Usuario para autenticación y gestión de cuentas
+# CRUD: Usuario
 # ==============================================================================
 from auth import generar_hash_password
 
 
 def get_usuario_por_correo(db: Session, correo: str):
-    return db.query(models.Usuario).filter(models.Usuario.correo == correo).first()
+    return db.query(models.Usuario).filter(
+        models.Usuario.correo == correo
+    ).first()
+
+
+def get_usuario(db: Session, usuario_id: int):
+    return db.query(models.Usuario).filter(
+        models.Usuario.id == usuario_id
+    ).first()
 
 
 def create_usuario(db: Session, usuario: schemas.UsuarioCreate):
@@ -574,7 +600,31 @@ def create_usuario(db: Session, usuario: schemas.UsuarioCreate):
 
 
 def get_usuarios(db: Session):
-    return db.query(models.Usuario).all()
+    return db.query(models.Usuario).order_by(models.Usuario.id.asc()).all()
+
+
+def contar_administradores_activos(db: Session):
+    return db.query(models.Usuario).filter(
+        models.Usuario.rol == "Administrador",
+        models.Usuario.estado == True
+    ).count()
+
+
+def delete_usuario(db: Session, usuario_id: int):
+    """
+    Desactiva un usuario sin borrarlo físicamente.
+    """
+
+    db_usuario = db.query(models.Usuario).filter(
+        models.Usuario.id == usuario_id
+    ).first()
+
+    if db_usuario:
+        db_usuario.estado = False
+        db.commit()
+        db.refresh(db_usuario)
+
+    return db_usuario
 
 
 # ==============================================================================
@@ -617,12 +667,6 @@ def obtener_o_crear_parametro_activo(db: Session):
 
 
 def create_parametro_semestre(db: Session, parametro: schemas.ParametroSemestreCreate):
-    """
-    Crea o actualiza los parámetros del semestre.
-    Si ya existe un semestre activo o uno con el mismo nombre, lo actualiza.
-    Esto evita errores por nombre duplicado.
-    """
-
     existente = db.query(models.ParametroSemestre).filter(
         models.ParametroSemestre.nombre == parametro.nombre
     ).first()
@@ -645,14 +689,20 @@ def create_parametro_semestre(db: Session, parametro: schemas.ParametroSemestreC
         if parametro.activo:
             db.query(models.ParametroSemestre).filter(
                 models.ParametroSemestre.id != existente.id
-            ).update({"activo": False})
+            ).update(
+                {"activo": False},
+                synchronize_session=False
+            )
 
         db.commit()
         db.refresh(existente)
         return existente
 
     if parametro.activo:
-        db.query(models.ParametroSemestre).update({"activo": False})
+        db.query(models.ParametroSemestre).update(
+            {"activo": False},
+            synchronize_session=False
+        )
         db.commit()
 
     db_parametro = models.ParametroSemestre(**parametro.model_dump())

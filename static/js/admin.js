@@ -7,15 +7,46 @@ async function cargarUsuarios() {
   const usuarios = await api("/api/usuarios");
   const tabla = document.getElementById("tabla-usuarios");
 
-  tabla.innerHTML = usuarios.map(u => `
-    <tr>
-      <td>${u.id}</td>
-      <td>${u.nombre}</td>
-      <td>${u.correo}</td>
-      <td><span class="badge">${u.rol}</span></td>
-      <td>${u.estado ? "Activo" : "Inactivo"}</td>
-    </tr>
-  `).join("");
+  const usuarioActual = obtenerUsuario();
+
+  const totalAdminsActivos = usuarios.filter(u =>
+    u.rol === "Administrador" && u.estado
+  ).length;
+
+  tabla.innerHTML = usuarios.map(u => {
+    const esMiUsuario = usuarioActual && Number(usuarioActual.id) === Number(u.id);
+    const esUltimoAdminActivo =
+      u.rol === "Administrador" &&
+      u.estado &&
+      totalAdminsActivos <= 1;
+
+    let accion = "";
+
+    if (!u.estado) {
+      accion = `<span class="badge badge-warning">Inactivo</span>`;
+    } else if (esMiUsuario) {
+      accion = `<span class="badge">Usuario actual</span>`;
+    } else if (esUltimoAdminActivo) {
+      accion = `<span class="badge badge-warning">Último admin</span>`;
+    } else {
+      accion = `
+        <button type="button" onclick="eliminarUsuario(${u.id}, '${u.nombre.replace(/'/g, "\\'")}')">
+          Eliminar
+        </button>
+      `;
+    }
+
+    return `
+      <tr>
+        <td>${u.id}</td>
+        <td>${u.nombre}</td>
+        <td>${u.correo}</td>
+        <td><span class="badge">${u.rol}</span></td>
+        <td>${u.estado ? "Activo" : "Inactivo"}</td>
+        <td>${accion}</td>
+      </tr>
+    `;
+  }).join("");
 }
 
 async function crearUsuario() {
@@ -29,6 +60,11 @@ async function crearUsuario() {
 
   if (!usuario.nombre || !usuario.correo || !usuario.password) {
     alert("Debe completar nombre, correo y contraseña.");
+    return;
+  }
+
+  if (usuario.password.length < 6) {
+    alert("La contraseña debe tener mínimo 6 caracteres.");
     return;
   }
 
@@ -46,11 +82,26 @@ async function crearUsuario() {
   alert("Usuario creado correctamente.");
 }
 
+async function eliminarUsuario(id, nombre) {
+  if (!confirm(`¿Deseas eliminar/desactivar al usuario "${nombre}"?`)) {
+    return;
+  }
+
+  await api(`/api/usuarios/${id}`, {
+    method: "DELETE"
+  });
+
+  alert("Usuario eliminado correctamente. El usuario quedó inactivo y ya no podrá iniciar sesión.");
+  await cargarUsuarios();
+}
+
 async function cargarDatosIniciales() {
   if (!confirm("¿Deseas cargar los datos académicos iniciales?")) return;
 
   const resultado = await api("/api/seed/datos-academicos", { method: "POST" });
   const contenedor = document.getElementById("seed-resultado");
+
+  if (!contenedor) return;
 
   contenedor.innerHTML = `
     <strong>${resultado.mensaje}</strong><br>
@@ -71,6 +122,7 @@ async function cargarHorarios() {
 
   tabla.innerHTML = horarios.map(h => {
     const fecha = h.fecha_generacion ? new Date(h.fecha_generacion).toLocaleString() : "";
+
     return `
       <tr>
         <td>${h.id}</td>
@@ -81,8 +133,8 @@ async function cargarHorarios() {
         <td>${h.num_conflictos}</td>
         <td>${h.puntaje_total ?? 0}</td>
         <td>
-          <button onclick="exportarHorarioCSV(${h.id})">Exportar CSV</button>
-          ${!h.es_oficial ? `<button onclick="eliminarHorario(${h.id})">Eliminar</button>` : ""}
+          <button type="button" onclick="exportarHorarioCSV(${h.id})">Exportar CSV</button>
+          ${!h.es_oficial ? `<button type="button" onclick="eliminarHorario(${h.id})">Eliminar</button>` : ""}
         </td>
       </tr>
     `;
@@ -111,17 +163,23 @@ async function exportarHorarioCSV(id) {
 
   const blob = await response.blob();
   const url = window.URL.createObjectURL(blob);
+
   const a = document.createElement("a");
   a.href = url;
   a.download = `horario_${id}.csv`;
+
   document.body.appendChild(a);
   a.click();
+
   a.remove();
   window.URL.revokeObjectURL(url);
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
   if (!protegerPagina(["Administrador"])) return;
+
+  mostrarUsuarioActual();
+
   await cargarUsuarios();
   await cargarHorarios();
 });
