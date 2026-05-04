@@ -262,7 +262,7 @@ class Conflicto(Base):
     id_horario = Column(Integer, ForeignKey("horarios.id"), nullable=False)
     id_sesion = Column(Integer, ForeignKey("sesiones_clase.id"), nullable=True)
     # ID de la restricción violada: RH-01, RA-02, etc. (RNF-08)
-    id_restriccion = Column(String(10), nullable=False)
+    id_restriccion = Column(String(50), nullable=False)
     # Descripción en lenguaje de dominio, no técnico (RNF-07)
     descripcion = Column(Text, nullable=False)
     entidad_tipo = Column(String(20), nullable=False)  # Docente / Aula / Grupo / Franja

@@ -19,6 +19,8 @@ from typing import List
 import os
 import io
 import csv
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 import models, schemas, crud
 from database import engine, get_db
@@ -46,6 +48,8 @@ app = FastAPI(
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
+
+executor = ThreadPoolExecutor(max_workers=2)
 
 
 @app.exception_handler(RequestValidationError)
@@ -508,42 +512,66 @@ def eliminar_elegibilidad(
 # ==============================================================================
 
 @app.post("/api/generar-horario", tags=["Motor"])
-def generar_horario(
+async def generar_horario(
     db: Session = Depends(get_db),
     usuario=Depends(exigir_roles("Administrador", "Coordinador"))
 ):
+    # 1. Preparar sesiones y cargar datos con eager loading
     crud.preparar_sesiones_para_motor(db)
-
     datos = crud.get_todos_los_datos(db)
 
+    # 2. Validaciones previas
     if not datos["grupos"]:
         raise HTTPException(
             status_code=400,
             detail="No hay grupos registrados. Registra cursos y grupos antes de generar el horario."
         )
-
     if not datos["aulas"]:
         raise HTTPException(status_code=400, detail="No hay aulas registradas.")
-
     if not datos["franjas"]:
         raise HTTPException(status_code=400, detail="No hay franjas horarias registradas.")
-
     if not datos.get("sesiones"):
         raise HTTPException(
             status_code=400,
             detail="No hay sesiones reales generadas para programar."
         )
 
+    # 3. CRÍTICO: desvincula todos los objetos SQLAlchemy de la sesión DB
+    #    antes de pasarlos al ThreadPoolExecutor.
+    #    Sin esto, el motor intenta acceder a relaciones lazy en otro thread,
+    #    lo que provoca DetachedInstanceError → HTTP 500.
+    #    Con joinedload en get_todos_los_datos + expunge_all aquí, los datos
+    #    son objetos Python puros en memoria, seguros para cualquier thread.
+    db.expunge_all()
+
+    # 4. Crear el registro del horario (después del expunge para que no se pierda)
     horario_db = crud.create_horario(db)
 
-    motor = GeneradorHorarios(datos)
-    resultado = motor.generar()
+    # 5. Ejecutar el motor en un thread separado para no bloquear el event loop
+    def ejecutar_motor():
+        motor = GeneradorHorarios(datos)
+        return motor.generar()
+
+    loop = asyncio.get_event_loop()
+    try:
+        resultado = await asyncio.wait_for(
+            loop.run_in_executor(executor, ejecutar_motor),
+            timeout=60.0
+        )
+    except asyncio.TimeoutError:
+        horario_db.estado = "No_Factible"
+        horario_db.puntaje_total = 0.0
+        db.commit()
+        raise HTTPException(
+            status_code=408,
+            detail="El motor tardó demasiado (60s). Revisa disponibilidades y franjas horarias."
+        )
 
     puntaje_total = resultado.get("puntaje_total", 0.0)
 
+    # 6. Persistir asignaciones
     for asig in resultado.get("asignaciones", []):
         sesion = asig["sesion"]
-
         asignacion_db = models.Asignacion(
             id_sesion=sesion.id,
             id_docente=asig["docente"].id,
@@ -553,32 +581,39 @@ def generar_horario(
             estado="Valida",
             puntaje_penalizacion=asig.get("penalizacion", 0.0)
         )
-
         db.add(asignacion_db)
-        sesion.estado = "Asignada"
 
+        # Actualizar estado de la sesión directamente por ID para evitar
+        # operar sobre el objeto detached
+        db.query(models.SesionClase).filter(
+            models.SesionClase.id == sesion.id
+        ).update({"estado": "Asignada"}, synchronize_session=False)
+
+    # 7. Persistir conflictos (deduplicados)
+    conflictos_vistos = set()
     for conf in resultado.get("conflictos", []):
-        id_sesion = conf.get("id_sesion")
+        clave = (conf.get("id_restriccion"), conf.get("id_sesion"))
+        if clave in conflictos_vistos:
+            continue
+        conflictos_vistos.add(clave)
 
+        id_sesion = conf.get("id_sesion")
         conflicto_db = models.Conflicto(
             id_horario=horario_db.id,
             id_sesion=id_sesion,
-            id_restriccion=conf.get("id_restriccion", "???"),
+            id_restriccion=conf.get("id_restriccion", "???")[:50],
             descripcion=conf.get("descripcion", ""),
             entidad_tipo=conf.get("entidad_tipo", "Sistema"),
             entidad_id=conf.get("entidad_id", 0)
         )
-
         db.add(conflicto_db)
 
         if id_sesion:
-            sesion_conflicto = db.query(models.SesionClase).filter(
+            db.query(models.SesionClase).filter(
                 models.SesionClase.id == id_sesion
-            ).first()
+            ).update({"estado": "Conflicto"}, synchronize_session=False)
 
-            if sesion_conflicto:
-                sesion_conflicto.estado = "Conflicto"
-
+    # 8. Actualizar estado final del horario
     estado_final = "Valido" if resultado["exito"] else "No_Factible"
     horario_db.estado = estado_final
     horario_db.puntaje_total = puntaje_total
@@ -586,26 +621,31 @@ def generar_horario(
     db.commit()
     db.refresh(horario_db)
 
+    # 9. Construir respuesta
     asignaciones_out = _construir_asignaciones_out(
         resultado.get("asignaciones", []),
         horario_db.id
     )
+
+    conflictos_out = list({
+        (c.get("id_restriccion"), c.get("id_sesion")): c
+        for c in resultado.get("conflictos", [])
+    }.values())
 
     return {
         "horario_id": horario_db.id,
         "estado": estado_final,
         "puntaje_total": puntaje_total,
         "total_asignadas": len(resultado.get("asignaciones", [])),
-        "total_conflictos": len(resultado.get("conflictos", [])),
+        "total_conflictos": len(conflictos_out),
         "asignaciones": asignaciones_out,
-        "conflictos": resultado.get("conflictos", []),
+        "conflictos": conflictos_out,
         "reporte_blandas": resultado.get("reporte_blandas", {})
     }
 
 
 def _construir_asignaciones_out(asignaciones: list, horario_id: int) -> list:
     resultado = []
-
     for asig in asignaciones:
         resultado.append({
             "horario_id": horario_id,
@@ -620,7 +660,6 @@ def _construir_asignaciones_out(asignaciones: list, horario_id: int) -> list:
             "grupo_nombre": asig["grupo"].nombre_grupo,
             "penalizacion": asig.get("penalizacion", 0.0)
         })
-
     return resultado
 
 

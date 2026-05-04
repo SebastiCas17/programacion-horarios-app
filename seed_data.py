@@ -240,7 +240,10 @@ def cargar_datos_academicos_iniciales(db: Session):
     parametro.min_inscritos_cierre = 10
     parametro.activo = True
 
-    # Docentes
+    # -------------------------------------------------------------------------
+    # Docentes (10)
+    # TC = Tiempo Completo | MT = Medio Tiempo | HO = Hora Cátedra
+    # -------------------------------------------------------------------------
     ana, nuevo = _get_or_create_docente(
         db, "Ana Torres", "ana.torres@unbosque.edu.co", "TC"
     )
@@ -256,14 +259,74 @@ def cargar_datos_academicos_iniciales(db: Session):
     )
     creados["docentes"] += int(nuevo)
 
-    # Cursos
+    jorge, nuevo = _get_or_create_docente(
+        db, "Jorge Ramírez", "jorge.ramirez@unbosque.edu.co", "TC"
+    )
+    creados["docentes"] += int(nuevo)
+
+    sofia, nuevo = _get_or_create_docente(
+        db, "Sofía Herrera", "sofia.herrera@unbosque.edu.co", "MT"
+    )
+    creados["docentes"] += int(nuevo)
+
+    andres, nuevo = _get_or_create_docente(
+        db, "Andrés Castillo", "andres.castillo@unbosque.edu.co", "TC"
+    )
+    creados["docentes"] += int(nuevo)
+
+    maria, nuevo = _get_or_create_docente(
+        db, "María Rodríguez", "maria.rodriguez@unbosque.edu.co", "TC"
+    )
+    creados["docentes"] += int(nuevo)
+
+    david, nuevo = _get_or_create_docente(
+        db, "David Vargas", "david.vargas@unbosque.edu.co", "TC"
+    )
+    creados["docentes"] += int(nuevo)
+
+    claudia, nuevo = _get_or_create_docente(
+        db, "Claudia Moreno", "claudia.moreno@unbosque.edu.co", "TC"
+    )
+    creados["docentes"] += int(nuevo)
+
+    felipe, nuevo = _get_or_create_docente(
+        db, "Felipe Suárez", "felipe.suarez@unbosque.edu.co", "MT"
+    )
+    creados["docentes"] += int(nuevo)
+
+    # -------------------------------------------------------------------------
+    # Cursos / Asignaturas (20)
+    # -------------------------------------------------------------------------
+
+    # --- Matemáticas e Ingeniería ---
     calculo, nuevo = _get_or_create_curso(
-        db, "Cálculo Diferencial", "CAL101", 4, 2
+        db, "Cálculo Diferencial", "MAT101", 4, 2
     )
     creados["cursos"] += int(nuevo)
 
+    calculo_integral, nuevo = _get_or_create_curso(
+        db, "Cálculo Integral", "MAT102", 4, 2
+    )
+    creados["cursos"] += int(nuevo)
+
+    algebra, nuevo = _get_or_create_curso(
+        db, "Álgebra Lineal", "MAT201", 3, 2
+    )
+    creados["cursos"] += int(nuevo)
+
+    estadistica, nuevo = _get_or_create_curso(
+        db, "Estadística y Probabilidad", "MAT301", 3, 2
+    )
+    creados["cursos"] += int(nuevo)
+
+    # --- Sistemas e Informática ---
     programacion, nuevo = _get_or_create_curso(
         db, "Programación I", "SIS101", 3, 2, requiere_computadores=True
+    )
+    creados["cursos"] += int(nuevo)
+
+    programacion2, nuevo = _get_or_create_curso(
+        db, "Programación II", "SIS102", 3, 2, requiere_computadores=True
     )
     creados["cursos"] += int(nuevo)
 
@@ -272,25 +335,120 @@ def cargar_datos_academicos_iniciales(db: Session):
     )
     creados["cursos"] += int(nuevo)
 
+    redes, nuevo = _get_or_create_curso(
+        db, "Redes de Computadores", "SIS301", 3, 2, requiere_computadores=True
+    )
+    creados["cursos"] += int(nuevo)
+
+    so, nuevo = _get_or_create_curso(
+        db, "Sistemas Operativos", "SIS302", 3, 2, requiere_computadores=True
+    )
+    creados["cursos"] += int(nuevo)
+
+    ingsoft, nuevo = _get_or_create_curso(
+        db, "Ingeniería de Software", "SIS401", 4, 2, requiere_computadores=True
+    )
+    creados["cursos"] += int(nuevo)
+
+    ia, nuevo = _get_or_create_curso(
+        db, "Inteligencia Artificial", "SIS501", 4, 2, requiere_computadores=True
+    )
+    creados["cursos"] += int(nuevo)
+
+    seguridad, nuevo = _get_or_create_curso(
+        db, "Seguridad Informática", "SIS502", 3, 2, requiere_computadores=True
+    )
+    creados["cursos"] += int(nuevo)
+
+    # --- Ciencias Básicas ---
+    fisica, nuevo = _get_or_create_curso(
+        db, "Física General", "CIE101", 4, 2
+    )
+    creados["cursos"] += int(nuevo)
+
+    quimica, nuevo = _get_or_create_curso(
+        db, "Química General", "CIE102", 3, 2
+    )
+    creados["cursos"] += int(nuevo)
+
+    # --- Humanidades y Gestión ---
     etica, nuevo = _get_or_create_curso(
         db, "Ética Profesional", "HUM101", 2, 1
     )
     creados["cursos"] += int(nuevo)
 
-    # Grupos
-    _, nuevo = _get_or_create_grupo(db, calculo, "CAL-01", 35, 30)
+    comunicacion, nuevo = _get_or_create_curso(
+        db, "Comunicación Oral y Escrita", "HUM102", 2, 1
+    )
+    creados["cursos"] += int(nuevo)
+
+    ingles, nuevo = _get_or_create_curso(
+        db, "Inglés Técnico", "HUM201", 3, 2, requiere_sillas_moviles=True
+    )
+    creados["cursos"] += int(nuevo)
+
+    gestion, nuevo = _get_or_create_curso(
+        db, "Gestión de Proyectos", "ADM101", 3, 2
+    )
+    creados["cursos"] += int(nuevo)
+
+    emprendimiento, nuevo = _get_or_create_curso(
+        db, "Emprendimiento e Innovación", "ADM201", 2, 1
+    )
+    creados["cursos"] += int(nuevo)
+
+    legislacion, nuevo = _get_or_create_curso(
+        db, "Legislación Informática", "ADM301", 2, 1
+    )
+    creados["cursos"] += int(nuevo)
+
+    # -------------------------------------------------------------------------
+    # Grupos (un grupo por asignatura)
+    # -------------------------------------------------------------------------
+    _, nuevo = _get_or_create_grupo(db, calculo,          "MAT101-01", 35, 30)
+    creados["grupos"] += int(nuevo)
+    _, nuevo = _get_or_create_grupo(db, calculo_integral, "MAT102-01", 35, 28)
+    creados["grupos"] += int(nuevo)
+    _, nuevo = _get_or_create_grupo(db, algebra,          "MAT201-01", 30, 24)
+    creados["grupos"] += int(nuevo)
+    _, nuevo = _get_or_create_grupo(db, estadistica,      "MAT301-01", 30, 22)
+    creados["grupos"] += int(nuevo)
+    _, nuevo = _get_or_create_grupo(db, programacion,     "SIS101-01", 30, 25)
+    creados["grupos"] += int(nuevo)
+    _, nuevo = _get_or_create_grupo(db, programacion2,    "SIS102-01", 30, 20)
+    creados["grupos"] += int(nuevo)
+    _, nuevo = _get_or_create_grupo(db, bases,            "SIS201-01", 28, 22)
+    creados["grupos"] += int(nuevo)
+    _, nuevo = _get_or_create_grupo(db, redes,            "SIS301-01", 28, 19)
+    creados["grupos"] += int(nuevo)
+    _, nuevo = _get_or_create_grupo(db, so,               "SIS302-01", 28, 21)
+    creados["grupos"] += int(nuevo)
+    _, nuevo = _get_or_create_grupo(db, ingsoft,          "SIS401-01", 30, 26)
+    creados["grupos"] += int(nuevo)
+    _, nuevo = _get_or_create_grupo(db, ia,               "SIS501-01", 25, 20)
+    creados["grupos"] += int(nuevo)
+    _, nuevo = _get_or_create_grupo(db, seguridad,        "SIS502-01", 25, 18)
+    creados["grupos"] += int(nuevo)
+    _, nuevo = _get_or_create_grupo(db, fisica,           "CIE101-01", 35, 30)
+    creados["grupos"] += int(nuevo)
+    _, nuevo = _get_or_create_grupo(db, quimica,          "CIE102-01", 30, 24)
+    creados["grupos"] += int(nuevo)
+    _, nuevo = _get_or_create_grupo(db, etica,            "HUM101-01", 30, 18)
+    creados["grupos"] += int(nuevo)
+    _, nuevo = _get_or_create_grupo(db, comunicacion,     "HUM102-01", 30, 20)
+    creados["grupos"] += int(nuevo)
+    _, nuevo = _get_or_create_grupo(db, ingles,           "HUM201-01", 25, 22)
+    creados["grupos"] += int(nuevo)
+    _, nuevo = _get_or_create_grupo(db, gestion,          "ADM101-01", 30, 25)
+    creados["grupos"] += int(nuevo)
+    _, nuevo = _get_or_create_grupo(db, emprendimiento,   "ADM201-01", 30, 15)
+    creados["grupos"] += int(nuevo)
+    _, nuevo = _get_or_create_grupo(db, legislacion,      "ADM301-01", 30, 12)
     creados["grupos"] += int(nuevo)
 
-    _, nuevo = _get_or_create_grupo(db, programacion, "PROG-01", 30, 25)
-    creados["grupos"] += int(nuevo)
-
-    _, nuevo = _get_or_create_grupo(db, bases, "BD-01", 28, 22)
-    creados["grupos"] += int(nuevo)
-
-    _, nuevo = _get_or_create_grupo(db, etica, "ETI-01", 30, 18)
-    creados["grupos"] += int(nuevo)
-
-    # Aulas
+    # -------------------------------------------------------------------------
+    # Aulas (5)
+    # -------------------------------------------------------------------------
     _, nuevo = _get_or_create_aula(db, "A-101", 40, "Bloque A")
     creados["aulas"] += int(nuevo)
 
@@ -307,17 +465,43 @@ def cargar_datos_academicos_iniciales(db: Session):
     )
     creados["aulas"] += int(nuevo)
 
+    _, nuevo = _get_or_create_aula(
+        db, "B-301", 38, "Bloque B", tiene_sillas_moviles=True
+    )
+    creados["aulas"] += int(nuevo)
+
+    # -------------------------------------------------------------------------
     # Franjas horarias
+    # -------------------------------------------------------------------------
     franjas_data = [
-        ("Lunes", "07:00", "09:00", False),
-        ("Lunes", "09:00", "11:00", False),
-        ("Martes", "07:00", "09:00", False),
-        ("Martes", "09:00", "11:00", False),
+        ("Lunes",     "07:00", "09:00", False),
+        ("Lunes",     "09:00", "11:00", False),
+        ("Lunes",     "14:00", "16:00", False),
+        ("Lunes",     "16:00", "18:00", False),
+        ("Martes",    "07:00", "09:00", False),
+        ("Martes",    "09:00", "11:00", False),
+        ("Martes",    "14:00", "16:00", False),
+        ("Martes",    "16:00", "18:00", False),
         ("Miercoles", "07:00", "09:00", False),
         ("Miercoles", "09:00", "11:00", False),
-        ("Jueves", "07:00", "09:00", False),
-        ("Viernes", "07:00", "09:00", False),
-        ("Lunes", "12:00", "13:00", True),
+        ("Miercoles", "14:00", "16:00", False),
+        ("Miercoles", "16:00", "18:00", False),
+        ("Jueves",    "07:00", "09:00", False),
+        ("Jueves",    "09:00", "11:00", False),
+        ("Jueves",    "14:00", "16:00", False),
+        ("Jueves",    "16:00", "18:00", False),
+        ("Viernes",   "07:00", "09:00", False),
+        ("Viernes",   "09:00", "11:00", False),
+        ("Viernes",   "14:00", "16:00", False),
+        ("Sabado",    "07:00", "09:00", False),
+        ("Sabado",    "09:00", "11:00", False),
+        ("Sabado",    "11:00", "13:00", False),
+        # Franja de almuerzo bloqueada
+        ("Lunes",     "12:00", "13:00", True),
+        ("Martes",    "12:00", "13:00", True),
+        ("Miercoles", "12:00", "13:00", True),
+        ("Jueves",    "12:00", "13:00", True),
+        ("Viernes",   "12:00", "13:00", True),
     ]
 
     franjas = {}
@@ -327,27 +511,113 @@ def cargar_datos_academicos_iniciales(db: Session):
         creados["franjas"] += int(nuevo)
         franjas[(dia, inicio, fin)] = franja
 
-    # Elegibilidad docente-curso
+    # -------------------------------------------------------------------------
+    # Elegibilidad docente → curso
+    # -------------------------------------------------------------------------
     elegibilidades_data = [
-        (ana, calculo),
-        (carlos, programacion),
-        (laura, bases),
-        (laura, etica),
+        # Ana Torres – Matemáticas
+        (ana,      calculo),
+        (ana,      calculo_integral),
+        (ana,      algebra),
+        # Carlos Méndez – Sistemas (programación)
+        (carlos,   programacion),
+        (carlos,   programacion2),
+        (carlos,   ingsoft),
+        # Laura Gómez – Bases de datos e IA
+        (laura,    bases),
+        (laura,    ia),
+        (laura,    seguridad),
+        # Jorge Ramírez – Redes y SO
+        (jorge,    redes),
+        (jorge,    so),
+        (jorge,    seguridad),
+        # Sofía Herrera – Estadística y Física
+        (sofia,    estadistica),
+        (sofia,    fisica),
+        # Andrés Castillo – Química y Física
+        (andres,   quimica),
+        (andres,   fisica),
+        # María Rodríguez – Humanidades
+        (maria,    etica),
+        (maria,    comunicacion),
+        (maria,    ingles),
+        # David Vargas – Gestión
+        (david,    gestion),
+        (david,    emprendimiento),
+        (david,    legislacion),
+        # Claudia Moreno – Ingeniería de Software y Gestión
+        (claudia,  ingsoft),
+        (claudia,  gestion),
+        (claudia,  algebra),
+        # Felipe Suárez – Cálculo y Estadística
+        (felipe,   calculo),
+        (felipe,   estadistica),
+        (felipe,   calculo_integral),
     ]
 
     for docente, curso in elegibilidades_data:
         _, nuevo = _get_or_create_elegibilidad(db, docente.id, curso.id)
         creados["elegibilidades"] += int(nuevo)
 
-    # Disponibilidad docente
+    # -------------------------------------------------------------------------
+    # Disponibilidad docente → franja
+    # Cada docente TC tiene disponibilidad amplia; MT moderada; HO reducida.
+    # -------------------------------------------------------------------------
     disponibilidad_data = [
-        (ana, ("Lunes", "07:00", "09:00")),
-        (ana, ("Miercoles", "07:00", "09:00")),
-        (carlos, ("Martes", "07:00", "09:00")),
-        (carlos, ("Jueves", "07:00", "09:00")),
-        (laura, ("Miercoles", "09:00", "11:00")),
-        (laura, ("Viernes", "07:00", "09:00")),
-        (laura, ("Martes", "09:00", "11:00")),
+        # Ana Torres (TC) – L/M/Mi/J mañana y tarde
+        (ana,     ("Lunes",     "07:00", "09:00")),
+        (ana,     ("Lunes",     "09:00", "11:00")),
+        (ana,     ("Miercoles", "07:00", "09:00")),
+        (ana,     ("Miercoles", "09:00", "11:00")),
+        (ana,     ("Viernes",   "07:00", "09:00")),
+        # Carlos Méndez (MT) – M/J mañana y tarde
+        (carlos,  ("Martes",    "07:00", "09:00")),
+        (carlos,  ("Martes",    "09:00", "11:00")),
+        (carlos,  ("Jueves",    "07:00", "09:00")),
+        (carlos,  ("Jueves",    "09:00", "11:00")),
+        (carlos,  ("Viernes",   "09:00", "11:00")),
+        # Laura Gómez (TC) – L/Mi/V mañana y tarde
+        (laura,   ("Lunes",     "14:00", "16:00")),
+        (laura,   ("Martes",    "09:00", "11:00")),
+        (laura,   ("Miercoles", "09:00", "11:00")),
+        (laura,   ("Viernes",   "07:00", "09:00")),
+        (laura,   ("Viernes",   "09:00", "11:00")),
+        # Jorge Ramírez (TC) – M/J/V mañana y tarde
+        (jorge,   ("Martes",    "07:00", "09:00")),
+        (jorge,   ("Jueves",    "07:00", "09:00")),
+        (jorge,   ("Jueves",    "14:00", "16:00")),
+        (jorge,   ("Viernes",   "14:00", "16:00")),
+        (jorge,   ("Sabado",    "07:00", "09:00")),
+        # Sofía Herrera (MT) – L/Mi tarde
+        (sofia,   ("Lunes",     "14:00", "16:00")),
+        (sofia,   ("Lunes",     "16:00", "18:00")),
+        (sofia,   ("Miercoles", "14:00", "16:00")),
+        (sofia,   ("Miercoles", "16:00", "18:00")),
+        # Andrés Castillo (HO) – Sábado
+        (andres,  ("Sabado",    "07:00", "09:00")),
+        (andres,  ("Sabado",    "09:00", "11:00")),
+        (andres,  ("Sabado",    "11:00", "13:00")),
+        # María Rodríguez (TC) – L/M/Mi/J/V
+        (maria,   ("Lunes",     "07:00", "09:00")),
+        (maria,   ("Martes",    "14:00", "16:00")),
+        (maria,   ("Miercoles", "07:00", "09:00")),
+        (maria,   ("Jueves",    "09:00", "11:00")),
+        (maria,   ("Viernes",   "07:00", "09:00")),
+        # David Vargas (HO) – M/J tarde
+        (david,   ("Martes",    "16:00", "18:00")),
+        (david,   ("Jueves",    "16:00", "18:00")),
+        (david,   ("Viernes",   "14:00", "16:00")),
+        # Claudia Moreno (TC) – L/Mi/J mañana y tarde
+        (claudia, ("Lunes",     "09:00", "11:00")),
+        (claudia, ("Lunes",     "16:00", "18:00")),
+        (claudia, ("Miercoles", "16:00", "18:00")),
+        (claudia, ("Jueves",    "14:00", "16:00")),
+        (claudia, ("Viernes",   "09:00", "11:00")),
+        # Felipe Suárez (MT) – M/J/Sab mañana
+        (felipe,  ("Martes",    "07:00", "09:00")),
+        (felipe,  ("Martes",    "09:00", "11:00")),
+        (felipe,  ("Jueves",    "07:00", "09:00")),
+        (felipe,  ("Sabado",    "09:00", "11:00")),
     ]
 
     for docente, franja_key in disponibilidad_data:

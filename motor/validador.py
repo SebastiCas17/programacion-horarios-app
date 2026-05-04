@@ -1,22 +1,20 @@
 """
 motor/validador.py
 ==================
-Validador de Restricciones Duras.
-Implementa el patrón Strategy: cada restricción es una función independiente
-que recibe un candidato y el estado actual del horario.
+Validador de Restricciones Duras — Versión Optimizada.
 
-Lógica académica aplicada:
+Cambios respecto a la versión anterior:
+- RH-01 y RH-02 ya no recorren listas: usan los índices precalculados del generador.
+- RA-01, RA-02, RA-03, RA-04 usan los índices O(1) del generador cuando están disponibles.
+  Si no se pasan índices (llamada directa), hacen el recorrido clásico como fallback.
+
+Restricciones implementadas:
 - RA-01: No solapamiento de docente.
 - RA-02: No solapamiento de aula.
 - RA-03: No solapamiento de grupo en la misma franja.
-- RA-04: Un mismo grupo no debe tener más de una sesión el mismo día.
-- RH-01: Disponibilidad docente opcional:
-         Si el docente tiene disponibilidad registrada, se respeta.
-         Si no tiene disponibilidad registrada, se considera flexible.
-- RH-02: Elegibilidad docente-curso flexible:
-         Si el docente está autorizado para el curso, puede dictarlo.
-         Si el docente no tiene ninguna materia asignada en elegibilidad, puede actuar como flexible.
-         Si el docente tiene elegibilidades para otros cursos, no puede dictar cursos no autorizados.
+- RA-04: Un mismo grupo no puede tener más de una sesión el mismo día.
+- RH-01: Disponibilidad docente (opcional — flexible si no tiene registrada).
+- RH-02: Elegibilidad docente-curso (flexible si no tiene ninguna materia).
 - RH-03: Rango académico lunes a viernes.
 - RH-04: Rango académico sábado.
 - RH-05: Franja no bloqueada ni solapada con almuerzo.
@@ -26,11 +24,6 @@ Lógica académica aplicada:
 
 
 class ResultadoValidacion:
-    """
-    Resultado de evaluar un candidato contra las restricciones duras.
-    Si valida = False, incluye el ID de restricción violada y descripción.
-    """
-
     def __init__(
         self,
         valida: bool = True,
@@ -60,23 +53,22 @@ class ResultadoValidacion:
         )
 
 
+# ==============================================================================
+# Utilidades de tiempo y día
+# ==============================================================================
+
 def _hora_a_minutos(hora: str) -> int:
-    horas, minutos = hora.split(":")
-    return int(horas) * 60 + int(minutos)
+    h, m = hora.split(":")
+    return int(h) * 60 + int(m)
 
 
 def _normalizar_dia(dia: str) -> str:
     if not dia:
         return ""
-
     return (
-        dia.strip()
-        .lower()
-        .replace("á", "a")
-        .replace("é", "e")
-        .replace("í", "i")
-        .replace("ó", "o")
-        .replace("ú", "u")
+        dia.strip().lower()
+        .replace("á", "a").replace("é", "e")
+        .replace("í", "i").replace("ó", "o").replace("ú", "u")
     )
 
 
@@ -85,148 +77,102 @@ def _mismo_dia(franja_a, franja_b) -> bool:
 
 
 def _dentro_de_rango(franja, inicio: str, fin: str) -> bool:
-    inicio_franja = _hora_a_minutos(franja.hora_inicio)
-    fin_franja = _hora_a_minutos(franja.hora_fin)
-    inicio_rango = _hora_a_minutos(inicio)
-    fin_rango = _hora_a_minutos(fin)
-
-    return inicio_franja >= inicio_rango and fin_franja <= fin_rango
+    return (
+        _hora_a_minutos(franja.hora_inicio) >= _hora_a_minutos(inicio)
+        and _hora_a_minutos(franja.hora_fin) <= _hora_a_minutos(fin)
+    )
 
 
 def _se_solapa_con_rango(franja, inicio: str, fin: str) -> bool:
-    inicio_franja = _hora_a_minutos(franja.hora_inicio)
-    fin_franja = _hora_a_minutos(franja.hora_fin)
-    inicio_bloqueo = _hora_a_minutos(inicio)
-    fin_bloqueo = _hora_a_minutos(fin)
-
-    return inicio_franja < fin_bloqueo and fin_franja > inicio_bloqueo
+    return (
+        _hora_a_minutos(franja.hora_inicio) < _hora_a_minutos(fin)
+        and _hora_a_minutos(franja.hora_fin) > _hora_a_minutos(inicio)
+    )
 
 
 def _franjas_se_solapan(franja_a, franja_b) -> bool:
     if not _mismo_dia(franja_a, franja_b):
         return False
-
-    inicio_a = _hora_a_minutos(franja_a.hora_inicio)
-    fin_a = _hora_a_minutos(franja_a.hora_fin)
-
-    inicio_b = _hora_a_minutos(franja_b.hora_inicio)
-    fin_b = _hora_a_minutos(franja_b.hora_fin)
-
-    return inicio_a < fin_b and fin_a > inicio_b
+    return (
+        _hora_a_minutos(franja_a.hora_inicio) < _hora_a_minutos(franja_b.hora_fin)
+        and _hora_a_minutos(franja_a.hora_fin) > _hora_a_minutos(franja_b.hora_inicio)
+    )
 
 
-def validar_candidato(candidato: dict, asignaciones_actuales: list, datos: dict) -> ResultadoValidacion:
+# ==============================================================================
+# Validador principal
+# ==============================================================================
+
+def validar_candidato(
+    candidato: dict,
+    asignaciones_actuales: list,
+    datos: dict,
+    indices: dict = None
+) -> ResultadoValidacion:
     """
     Evalúa un candidato contra todas las restricciones duras.
 
-    candidato:
+    El parámetro `indices` es opcional. Si se pasa (desde el generador optimizado),
+    las validaciones RA-01..RA-04 se hacen en O(1). Si no se pasa, se hace
+    el recorrido clásico O(n) como fallback.
+
+    indices esperado:
     {
-        docente,
-        aula,
-        franja,
-        sesion,
-        grupo,
-        curso,
-        docente_flexible
+        "docente_franjas_usadas": dict[int, set],   # docente_id -> set(franja_id)
+        "aula_franjas_usadas":    dict[int, set],   # aula_id    -> set(franja_id)
+        "grupo_franjas_usadas":   dict[int, set],   # grupo_id   -> set(franja_id)
+        "grupo_dias_usados":      dict[int, list],  # grupo_id   -> [dia_str, ...]
+        "disponibilidad_por_docente": dict[int, set],  # docente_id -> set(franja_id)
+        "elegibles_por_curso":    dict[int, set],   # curso_id   -> set(docente_id)
+        "docentes_con_elegibilidad": set,           # set(docente_id)
     }
     """
 
     docente = candidato["docente"]
-    aula = candidato["aula"]
-    franja = candidato["franja"]
-    grupo = candidato["grupo"]
-    curso = candidato["curso"]
+    aula    = candidato["aula"]
+    franja  = candidato["franja"]
+    grupo   = candidato["grupo"]
+    curso   = candidato["curso"]
 
     parametro = datos.get("parametro_semestre")
 
     # ------------------------------------------------------------------
-    # RH-03, RH-04 y RH-05: rangos institucionales y almuerzo
+    # RH-03 / RH-04 / RH-05: rangos institucionales y almuerzo
     # ------------------------------------------------------------------
     if parametro:
         dia = _normalizar_dia(franja.dia_semana)
 
-        if dia in ["lunes", "martes", "miercoles", "jueves", "viernes"]:
+        if dia in ("lunes", "martes", "miercoles", "jueves", "viernes"):
             if not _dentro_de_rango(franja, parametro.hora_inicio_lv, parametro.hora_fin_lv):
                 return ResultadoValidacion.fallo(
                     "RH-03",
-                    f"La franja {franja.dia_semana} {franja.hora_inicio}-{franja.hora_fin} está fuera del rango académico de lunes a viernes {parametro.hora_inicio_lv}-{parametro.hora_fin_lv}.",
-                    "Franja",
-                    franja.id
+                    f"Franja {franja.dia_semana} {franja.hora_inicio}-{franja.hora_fin} "
+                    f"fuera del rango académico L-V ({parametro.hora_inicio_lv}-{parametro.hora_fin_lv}).",
+                    "Franja", franja.id
                 )
 
-        if dia == "sabado":
+        elif dia == "sabado":
             if not _dentro_de_rango(franja, parametro.hora_inicio_sab, parametro.hora_fin_sab):
                 return ResultadoValidacion.fallo(
                     "RH-04",
-                    f"La franja de sábado {franja.hora_inicio}-{franja.hora_fin} está fuera del rango permitido {parametro.hora_inicio_sab}-{parametro.hora_fin_sab}.",
-                    "Franja",
-                    franja.id
+                    f"Franja sábado {franja.hora_inicio}-{franja.hora_fin} "
+                    f"fuera del rango permitido ({parametro.hora_inicio_sab}-{parametro.hora_fin_sab}).",
+                    "Franja", franja.id
                 )
 
         if _se_solapa_con_rango(franja, parametro.inicio_almuerzo, parametro.fin_almuerzo):
             return ResultadoValidacion.fallo(
                 "RH-05",
-                f"La franja {franja.dia_semana} {franja.hora_inicio}-{franja.hora_fin} se solapa con el almuerzo {parametro.inicio_almuerzo}-{parametro.fin_almuerzo}.",
-                "Franja",
-                franja.id
+                f"Franja {franja.dia_semana} {franja.hora_inicio}-{franja.hora_fin} "
+                f"se solapa con almuerzo ({parametro.inicio_almuerzo}-{parametro.fin_almuerzo}).",
+                "Franja", franja.id
             )
 
-    # ------------------------------------------------------------------
-    # RH-05: franja bloqueada
-    # ------------------------------------------------------------------
     if franja.bloqueada:
         return ResultadoValidacion.fallo(
             "RH-05",
             f"La franja {franja.dia_semana} {franja.hora_inicio}-{franja.hora_fin} está bloqueada.",
-            "Franja",
-            franja.id
-        )
-
-    # ------------------------------------------------------------------
-    # RH-01: disponibilidad docente opcional
-    # Si tiene disponibilidad registrada, se exige cumplirla.
-    # Si no tiene disponibilidad registrada, se considera flexible.
-    # ------------------------------------------------------------------
-    disponibilidades_docente = [
-        d.id_franja for d in datos.get("disponibilidades", [])
-        if d.id_docente == docente.id
-    ]
-
-    if disponibilidades_docente and franja.id not in disponibilidades_docente:
-        return ResultadoValidacion.fallo(
-            "RH-01",
-            f"El docente '{docente.nombre}' tiene restricción horaria y no está disponible el {franja.dia_semana} {franja.hora_inicio}-{franja.hora_fin}.",
-            "Docente",
-            docente.id
-        )
-
-    # ------------------------------------------------------------------
-    # RH-02: elegibilidad docente-curso flexible
-    # ------------------------------------------------------------------
-    elegibilidades_activas = [
-        e for e in datos.get("elegibilidades", [])
-        if e.activo
-    ]
-
-    elegibles_curso = [
-        e.id_docente for e in elegibilidades_activas
-        if e.id_curso == curso.id
-    ]
-
-    materias_docente = [
-        e.id_curso for e in elegibilidades_activas
-        if e.id_docente == docente.id
-    ]
-
-    docente_autorizado_para_curso = docente.id in elegibles_curso
-    docente_sin_materias_asignadas = len(materias_docente) == 0
-
-    if not docente_autorizado_para_curso and not docente_sin_materias_asignadas:
-        return ResultadoValidacion.fallo(
-            "RH-02",
-            f"El docente '{docente.nombre}' no está habilitado para dictar el curso '{curso.nombre}' y ya tiene materias específicas registradas.",
-            "Docente",
-            docente.id
+            "Franja", franja.id
         )
 
     # ------------------------------------------------------------------
@@ -235,78 +181,158 @@ def validar_candidato(candidato: dict, asignaciones_actuales: list, datos: dict)
     if curso.requiere_computadores and not aula.tiene_computadores:
         return ResultadoValidacion.fallo(
             "RH-07",
-            f"El curso '{curso.nombre}' requiere computadores, pero el aula '{aula.codigo}' no los tiene.",
-            "Aula",
-            aula.id
+            f"Curso '{curso.nombre}' requiere computadores; aula '{aula.codigo}' no los tiene.",
+            "Aula", aula.id
         )
 
     if curso.requiere_sillas_moviles and not aula.tiene_sillas_moviles:
         return ResultadoValidacion.fallo(
             "RH-07",
-            f"El curso '{curso.nombre}' requiere sillas móviles, pero el aula '{aula.codigo}' no las tiene.",
-            "Aula",
-            aula.id
+            f"Curso '{curso.nombre}' requiere sillas móviles; aula '{aula.codigo}' no las tiene.",
+            "Aula", aula.id
         )
 
     # ------------------------------------------------------------------
     # RH-09: capacidad del aula
     # ------------------------------------------------------------------
     inscritos = grupo.inscritos if grupo.inscritos and grupo.inscritos > 0 else grupo.cupo_objetivo
-
     if aula.capacidad < inscritos:
         return ResultadoValidacion.fallo(
             "RH-09",
-            f"El aula '{aula.codigo}' tiene capacidad {aula.capacidad}, pero el grupo '{grupo.nombre_grupo}' requiere {inscritos} cupos.",
-            "Aula",
-            aula.id
+            f"Aula '{aula.codigo}' (cap. {aula.capacidad}) insuficiente para "
+            f"grupo '{grupo.nombre_grupo}' ({inscritos} inscritos).",
+            "Aula", aula.id
         )
 
     # ------------------------------------------------------------------
-    # RA-01: docente sin cruces por día/hora
+    # RH-01: disponibilidad docente
     # ------------------------------------------------------------------
-    for asig in asignaciones_actuales:
-        if asig["docente"].id == docente.id and _franjas_se_solapan(asig["franja"], franja):
+    if indices:
+        disp = indices["disponibilidad_por_docente"].get(docente.id)
+        if disp and franja.id not in disp:
+            return ResultadoValidacion.fallo(
+                "RH-01",
+                f"Docente '{docente.nombre}' no disponible el "
+                f"{franja.dia_semana} {franja.hora_inicio}-{franja.hora_fin}.",
+                "Docente", docente.id
+            )
+    else:
+        # Fallback O(n)
+        disp_ids = [
+            d.id_franja for d in datos.get("disponibilidades", [])
+            if d.id_docente == docente.id
+        ]
+        if disp_ids and franja.id not in disp_ids:
+            return ResultadoValidacion.fallo(
+                "RH-01",
+                f"Docente '{docente.nombre}' no disponible el "
+                f"{franja.dia_semana} {franja.hora_inicio}-{franja.hora_fin}.",
+                "Docente", docente.id
+            )
+
+    # ------------------------------------------------------------------
+    # RH-02: elegibilidad docente-curso
+    # ------------------------------------------------------------------
+    if indices:
+        elegibles = indices["elegibles_por_curso"].get(curso.id, set())
+        con_elegibilidad = indices["docentes_con_elegibilidad"]
+        autorizado = docente.id in elegibles
+        flexible = docente.id not in con_elegibilidad
+    else:
+        # Fallback O(n)
+        eleg_activas = [e for e in datos.get("elegibilidades", []) if e.activo]
+        elegibles = {e.id_docente for e in eleg_activas if e.id_curso == curso.id}
+        con_elegibilidad = {e.id_docente for e in eleg_activas}
+        autorizado = docente.id in elegibles
+        flexible = docente.id not in con_elegibilidad
+
+    if not autorizado and not flexible:
+        return ResultadoValidacion.fallo(
+            "RH-02",
+            f"Docente '{docente.nombre}' no habilitado para '{curso.nombre}'.",
+            "Docente", docente.id
+        )
+
+    # ------------------------------------------------------------------
+    # RA-01 / RA-02 / RA-03 / RA-04: solapamientos
+    # Con índices: O(1). Sin índices: O(n) fallback.
+    # ------------------------------------------------------------------
+    if indices:
+        fid = franja.id
+        dia_actual = _normalizar_dia(franja.dia_semana)
+
+        # RA-01: docente ya ocupa esa franja exacta
+        if fid in indices["docente_franjas_usadas"].get(docente.id, set()):
             return ResultadoValidacion.fallo(
                 "RA-01",
-                f"El docente '{docente.nombre}' ya tiene una sesión asignada el {franja.dia_semana} entre {asig['franja'].hora_inicio}-{asig['franja'].hora_fin}, lo cual se cruza con {franja.hora_inicio}-{franja.hora_fin}.",
-                "Docente",
-                docente.id
+                f"Docente '{docente.nombre}' ya tiene clase en "
+                f"{franja.dia_semana} {franja.hora_inicio}-{franja.hora_fin}.",
+                "Docente", docente.id
             )
 
-    # ------------------------------------------------------------------
-    # RA-02: aula sin cruces por día/hora
-    # ------------------------------------------------------------------
-    for asig in asignaciones_actuales:
-        if asig["aula"].id == aula.id and _franjas_se_solapan(asig["franja"], franja):
+        # RA-02: aula ya ocupada en esa franja exacta
+        if fid in indices["aula_franjas_usadas"].get(aula.id, set()):
             return ResultadoValidacion.fallo(
                 "RA-02",
-                f"El aula '{aula.codigo}' ya está ocupada el {franja.dia_semana} {asig['franja'].hora_inicio}-{asig['franja'].hora_fin}, lo cual se cruza con {franja.hora_inicio}-{franja.hora_fin}.",
-                "Aula",
-                aula.id
+                f"Aula '{aula.codigo}' ya ocupada en "
+                f"{franja.dia_semana} {franja.hora_inicio}-{franja.hora_fin}.",
+                "Aula", aula.id
             )
 
-    # ------------------------------------------------------------------
-    # RA-03: grupo sin cruces por día/hora
-    # ------------------------------------------------------------------
-    for asig in asignaciones_actuales:
-        if asig["grupo"].id == grupo.id and _franjas_se_solapan(asig["franja"], franja):
+        # RA-03: grupo ya tiene clase en esa franja exacta
+        if fid in indices["grupo_franjas_usadas"].get(grupo.id, set()):
             return ResultadoValidacion.fallo(
                 "RA-03",
-                f"El grupo '{grupo.nombre_grupo}' ya tiene una sesión el {franja.dia_semana} {asig['franja'].hora_inicio}-{asig['franja'].hora_fin}, lo cual se cruza con {franja.hora_inicio}-{franja.hora_fin}.",
-                "Grupo",
-                grupo.id
+                f"Grupo '{grupo.nombre_grupo}' ya tiene clase en "
+                f"{franja.dia_semana} {franja.hora_inicio}-{franja.hora_fin}.",
+                "Grupo", grupo.id
             )
 
-    # ------------------------------------------------------------------
-    # RA-04: un mismo grupo no debe tener dos sesiones el mismo día
-    # ------------------------------------------------------------------
-    for asig in asignaciones_actuales:
-        if asig["grupo"].id == grupo.id and _mismo_dia(asig["franja"], franja):
+        # RA-04: grupo ya tiene sesión ese día
+        dias_grupo = indices["grupo_dias_usados"].get(grupo.id, [])
+        if any(_normalizar_dia(d) == dia_actual for d in dias_grupo):
             return ResultadoValidacion.fallo(
                 "RA-04",
-                f"El grupo '{grupo.nombre_grupo}' ya tiene una sesión programada el día {franja.dia_semana}. Para distribuir la carga académica, no se permite más de una sesión del mismo grupo el mismo día.",
-                "Grupo",
-                grupo.id
+                f"Grupo '{grupo.nombre_grupo}' ya tiene sesión el {franja.dia_semana}. "
+                f"No se permiten dos sesiones del mismo grupo en el mismo día.",
+                "Grupo", grupo.id
             )
+
+    else:
+        # Fallback O(n) — mismo comportamiento que la versión original
+        for asig in asignaciones_actuales:
+            if asig["docente"].id == docente.id and _franjas_se_solapan(asig["franja"], franja):
+                return ResultadoValidacion.fallo(
+                    "RA-01",
+                    f"Docente '{docente.nombre}' ya tiene sesión en "
+                    f"{franja.dia_semana} {asig['franja'].hora_inicio}-{asig['franja'].hora_fin}.",
+                    "Docente", docente.id
+                )
+
+        for asig in asignaciones_actuales:
+            if asig["aula"].id == aula.id and _franjas_se_solapan(asig["franja"], franja):
+                return ResultadoValidacion.fallo(
+                    "RA-02",
+                    f"Aula '{aula.codigo}' ya ocupada en "
+                    f"{franja.dia_semana} {asig['franja'].hora_inicio}-{asig['franja'].hora_fin}.",
+                    "Aula", aula.id
+                )
+
+        for asig in asignaciones_actuales:
+            if asig["grupo"].id == grupo.id and _franjas_se_solapan(asig["franja"], franja):
+                return ResultadoValidacion.fallo(
+                    "RA-03",
+                    f"Grupo '{grupo.nombre_grupo}' ya tiene clase en "
+                    f"{franja.dia_semana} {asig['franja'].hora_inicio}-{asig['franja'].hora_fin}.",
+                    "Grupo", grupo.id
+                )
+
+        for asig in asignaciones_actuales:
+            if asig["grupo"].id == grupo.id and _mismo_dia(asig["franja"], franja):
+                return ResultadoValidacion.fallo(
+                    "RA-04",
+                    f"Grupo '{grupo.nombre_grupo}' ya tiene sesión el {franja.dia_semana}.",
+                    "Grupo", grupo.id
+                )
 
     return ResultadoValidacion.ok()

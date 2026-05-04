@@ -5,7 +5,7 @@ Operaciones CRUD (Create, Read, Update, Delete) sobre la base de datos.
 Implementa el patrón Repository: la capa de negocio no conoce SQLAlchemy directamente.
 """
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_
 
 import models, schemas
@@ -290,7 +290,6 @@ def delete_elegibilidad(db: Session, eleg_id: int):
 
 # ==============================================================================
 # CRUD: SesionClase
-# Normalmente las sesiones se crean automáticamente por el motor
 # ==============================================================================
 def create_sesiones_para_grupo(db: Session, grupo_id: int, num_sesiones: int):
     """
@@ -377,19 +376,24 @@ def preparar_sesiones_para_motor(db: Session):
 
 def get_sesiones_motor(db: Session):
     """
-    Retorna las sesiones reales que pueden ser usadas por el motor.
+    Retorna las sesiones reales que pueden ser usadas por el motor,
+    con sus relaciones grupo y curso ya cargadas en memoria (eager load)
+    para evitar DetachedInstanceError en el executor.
     """
 
-    return db.query(models.SesionClase).join(
-        models.Grupo,
-        models.SesionClase.id_grupo == models.Grupo.id
-    ).join(
-        models.Curso,
-        models.Grupo.id_curso == models.Curso.id
-    ).filter(
-        models.Grupo.estado != "Cerrado",
-        models.Curso.estado == True
-    ).all()
+    return (
+        db.query(models.SesionClase)
+        .join(models.Grupo, models.SesionClase.id_grupo == models.Grupo.id)
+        .join(models.Curso, models.Grupo.id_curso == models.Curso.id)
+        .options(
+            joinedload(models.SesionClase.grupo).joinedload(models.Grupo.curso)
+        )
+        .filter(
+            models.Grupo.estado != "Cerrado",
+            models.Curso.estado == True
+        )
+        .all()
+    )
 
 
 def actualizar_estado_sesion(db: Session, sesion_id: int, estado: str):
@@ -417,7 +421,29 @@ def get_horarios(db: Session):
 
 
 def get_horario(db: Session, horario_id: int):
-    return db.query(models.Horario).filter(models.Horario.id == horario_id).first()
+    """
+    Carga el horario con TODAS sus relaciones usando eager loading.
+    Esto evita lazy load errors al acceder a relaciones fuera del contexto
+    de la sesión SQLAlchemy (ej: en templates, serialización, etc.).
+    """
+    return (
+        db.query(models.Horario)
+        .options(
+            joinedload(models.Horario.asignaciones)
+                .joinedload(models.Asignacion.sesion)
+                .joinedload(models.SesionClase.grupo)
+                .joinedload(models.Grupo.curso),
+            joinedload(models.Horario.asignaciones)
+                .joinedload(models.Asignacion.docente),
+            joinedload(models.Horario.asignaciones)
+                .joinedload(models.Asignacion.aula),
+            joinedload(models.Horario.asignaciones)
+                .joinedload(models.Asignacion.franja),
+            joinedload(models.Horario.conflictos),
+        )
+        .filter(models.Horario.id == horario_id)
+        .first()
+    )
 
 
 def get_ultimo_horario(db: Session):
@@ -478,18 +504,46 @@ def delete_horario(db: Session, horario_id: int):
 def get_todos_los_datos(db: Session):
     """
     Carga todos los datos necesarios para el motor de horarios en memoria.
-    Incluye sesiones reales persistidas en la base de datos.
+
+    IMPORTANTE: usa joinedload en todas las relaciones que el motor necesita
+    acceder. Esto es crítico porque el motor se ejecuta en un ThreadPoolExecutor
+    separado, y SQLAlchemy no permite acceso lazy a relaciones fuera del thread
+    original de la sesión (DetachedInstanceError).
+
+    Al cargar todo con eager loading aquí, los datos son simples objetos Python
+    en memoria y pueden usarse sin problemas en cualquier thread.
     """
 
+    # Docentes con disponibilidades y elegibilidades precargadas
+    docentes = (
+        db.query(models.Docente)
+        .options(
+            joinedload(models.Docente.disponibilidades),
+            joinedload(models.Docente.elegibilidades)
+        )
+        .filter(models.Docente.estado == True)
+        .all()
+    )
+
+    # Grupos con su curso precargado
+    grupos = (
+        db.query(models.Grupo)
+        .options(joinedload(models.Grupo.curso))
+        .all()
+    )
+
+    # Sesiones con grupo y curso precargados
+    sesiones = get_sesiones_motor(db)
+
     return {
-        "docentes": get_docentes(db),
+        "docentes": docentes,
         "cursos": get_cursos(db),
-        "grupos": get_grupos(db),
+        "grupos": grupos,
         "aulas": get_aulas(db),
         "franjas": get_franjas(db),
         "disponibilidades": get_disponibilidades(db),
         "elegibilidades": get_elegibilidades(db),
-        "sesiones": get_sesiones_motor(db),
+        "sesiones": sesiones,
         "parametro_semestre": obtener_o_crear_parametro_activo(db)
     }
 
